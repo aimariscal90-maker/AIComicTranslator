@@ -2,7 +2,7 @@ from ultralytics import YOLO
 import os
 
 def check():
-    model_path = os.path.join("models", "comic_yolov8m.pt")
+    model_path = os.path.join("models", "comic_yolov8m_seg.pt")
     if not os.path.exists(model_path):
         print("Model not found")
         return

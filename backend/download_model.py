@@ -3,8 +3,8 @@ import shutil
 import os
 
 def download_model():
-    repo_id = "ogkalu/comic-speech-bubble-detector-yolov8m"
-    filename = "comic-speech-bubble-detector.pt"
+    repo_id = "kitsumed/yolov8m_seg-speech-bubble"
+    filename = "model.pt"
     local_dir = "models"
     
     print(f"Downloading {filename} from {repo_id}...")
@@ -16,7 +16,7 @@ def download_model():
     model_path = hf_hub_download(repo_id=repo_id, filename=filename)
     
     # Moverlo a nuestra carpeta models con un nombre claro
-    destination = os.path.join(local_dir, "comic_yolov8m.pt")
+    destination = os.path.join(local_dir, "comic_yolov8m_seg.pt")
     
     shutil.copy(model_path, destination)
     print(f"Model saved to {destination}")

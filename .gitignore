@@ -1,7 +1,7 @@
 # Backend - Python
 backend/venv/
-backend/__pycache__/
-backend/*.pyc
+**/__pycache__/
+*.pyc
 backend/uploads/*
 !backend/uploads/.gitkeep
 backend/models/*
