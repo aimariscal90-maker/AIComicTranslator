@@ -1,44 +1,110 @@
+import torch
+import os
 import cv2
 import numpy as np
+from PIL import Image
 
 class TextRemover:
-    def __init__(self):
-        # Future: Load LaMa model here
-        pass
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(TextRemover, cls).__new__(cls)
+            cls._instance._initialize()
+        return cls._instance
+    
+    def _initialize(self):
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        print(f"Inpainting Service using device: {self.device}")
+        
+        model_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models", "big-lama.pt")
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"LaMa model not found at {model_path}")
+            
+        print(f"Loading LaMa model from {model_path}...")
+        try:
+            self.model = torch.jit.load(model_path, map_location=self.device)
+            self.model.eval()
+            print("LaMa model loaded successfully.")
+        except Exception as e:
+            print(f"Error loading LaMa model: {e}")
+            self.model = None
 
-    def remove_text(self, image_path: str, bboxes: list = None, output_path: str = None):
+    def remove_text(self, image_path, bboxes, output_path):
         """
-        Removes text from the image using inpainting.
-        If bboxes provided, creates a mask from bboxes.
+        Borra el texto de la imagen usando las cajas/poligonos detectados.
         """
+        if self.model is None:
+            print("Model not loaded, skipping inpainting.")
+            return
+            
+        # 1. Leer Imagen y crear Mascara
         img = cv2.imread(image_path)
-        if img is None:
-            raise ValueError(f"Could not read image {image_path}")
-            
-        mask = np.zeros(img.shape[:2], dtype=np.uint8)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        h, w = img.shape[:2]
         
-        # If we have bboxes, create mask
-        if bboxes:
-            for item in bboxes:
-                # bbox format: [x1, y1, x2, y2]
-                x1, y1, x2, y2 = map(int, item['bbox'])
-                
-                # Expand slightly to cover edge artifacts (padding)
-                pad = 10
-                h, w = mask.shape
-                x1 = max(0, x1 - pad)
-                y1 = max(0, y1 - pad)
-                x2 = min(w, x2 + pad)
-                y2 = min(h, y2 + pad)
-                
-                cv2.rectangle(mask, (x1, y1), (x2, y2), 255, -1)
-                
-        # Simple telea inpainting for MVP (OpenCV built-in)
-        # Radius 3, generic algorithm
-        result = cv2.inpaint(img, mask, 3, cv2.INPAINT_TELEA)
+        mask = np.zeros((h, w), dtype=np.float32)
         
-        if output_path:
-            cv2.imwrite(output_path, result)
-            return output_path, result
-            
-        return result
+        for bubble in bboxes:
+            # Si tenemos poligono, usarlo
+            if bubble.get('polygon') and len(bubble['polygon']) > 0:
+                pts = np.array(bubble['polygon'], np.int32)
+                cv2.fillPoly(mask, [pts], 1.0)
+            else:
+                # Fallback a bbox
+                x1, y1, x2, y2 = map(int, bubble['bbox'])
+                cv2.rectangle(mask, (x1, y1), (x2, y2), 1.0, -1)
+                
+        # Dilatar mascara para cubrir bordes (Artifacts)
+        kernel = np.ones((5, 5), np.uint8) # MASK_PADDING configurable
+        mask = cv2.dilate(mask, kernel, iterations=2)
+        
+        # 2. Preprocesar para LaMa
+        # Resize a multiplo de 8 
+        # (LaMa lo necesita para bajar/subir de resolucion en la red)
+        def pad_to_divisible(arr, divisor=8):
+            h, w = arr.shape[:2]
+            h_pad = (divisor - h % divisor) % divisor
+            w_pad = (divisor - w % divisor) % divisor
+            return np.pad(arr, ((0, h_pad), (0, w_pad), (0, 0)), mode='reflect') if arr.ndim == 3 else np.pad(arr, ((0, h_pad), (0, w_pad)), mode='reflect')
+
+        img_padded = pad_to_divisible(img)
+        mask_padded = pad_to_divisible(mask, 8)
+        
+        # Normalize 0-1 and Tensor conversion
+        img_tensor = torch.from_numpy(img_padded).permute(2, 0, 1).float().div(255.0).to(self.device)
+        mask_tensor = torch.from_numpy(mask_padded).unsqueeze(0).float().to(self.device)
+        
+        # Agregar batch dimension
+        img_tensor = img_tensor.unsqueeze(0)
+        mask_tensor = mask_tensor.unsqueeze(0)
+        
+        # 3. Inferencia
+        with torch.no_grad():
+            # La entrada de big-lama.pt suele ser (image, mask) o solo image concatenada
+            # Dependiendo de como se exporto. 
+            # El modelo estandar de LaMa espera img y mask por separado o concatenados.
+            # Probemos la firma comun: model(img, mask)
+            try:
+                # Inpaint
+                inpainted = self.model(img_tensor, mask_tensor)
+                
+                # A veces devuelve una lista o tupla
+                if isinstance(inpainted, (list, tuple)):
+                    inpainted = inpainted[0]
+                    
+            except Exception as e:
+                print(f"Inference error: {e}")
+                return
+
+        # 4. Postprocesar
+        result_tensor = inpainted[0].permute(1, 2, 0).cpu().numpy()
+        result_tensor = np.clip(result_tensor * 255, 0, 255).astype(np.uint8)
+        
+        # Crop back to original size
+        result_img = result_tensor[:h, :w]
+        
+        # Guardar
+        result_bgr = cv2.cvtColor(result_img, cv2.COLOR_RGB2BGR)
+        cv2.imwrite(output_path, result_bgr)
+        return output_path

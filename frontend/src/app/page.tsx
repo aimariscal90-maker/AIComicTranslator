@@ -108,10 +108,39 @@ export default function Home() {
 
           {/* Result Stage */}
           <div className="space-y-4">
-            <h2 className="text-xl font-bold text-gray-800">2. Resultados AI (Debug)</h2>
+            <h2 className="text-xl font-bold text-gray-800">2. Resultados AI</h2>
             {serverImage ? (
-              <div className="space-y-4">
-                <ImagePreview src={serverImage} alt="Server Image" />
+              <div className="space-y-6">
+
+                {/* Grid de Resultados */}
+                <div className="grid grid-cols-1 gap-8">
+                  {/* Debug View */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-sm font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded">PASO 1</span>
+                      <h3 className="text-sm font-bold text-gray-700">Detección & OCR</h3>
+                    </div>
+                    <ImagePreview src={serverImage} alt="Debug View" />
+                  </div>
+
+                  {/* Clean View */}
+                  {apiResponse?.clean_url && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm font-bold bg-purple-100 text-purple-700 px-2 py-0.5 rounded">PASO 2</span>
+                        <h3 className="text-sm font-bold text-gray-700">✨ Magic Eraser (Inpainting)</h3>
+                      </div>
+                      <div className="border border-purple-200 rounded-lg overflow-hidden relative shadow-sm">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={`http://localhost:8000${apiResponse.clean_url}`}
+                          alt="Cleaned Image"
+                          className="w-full h-auto"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 {/* OCR Results Panel */}
                 <div className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm">
