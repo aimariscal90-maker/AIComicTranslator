@@ -81,11 +81,45 @@ async def process_comic(file: UploadFile = File(...)):
         # Lazy imports para evitar errores si las dependencias aun se instalan
         from services.detector import BubbleDetector
         from services.inpainting import TextRemover
+        from services.ocr import OCRService
+        import cv2
         
         # Detector
         detector = BubbleDetector()
         bubbles = detector.detect(file_path)
         
+        # OCR Service
+        ocr_service = OCRService()
+        
+        # Leer imagen para recortes
+        img_cv = cv2.imread(file_path)
+        
+        # Procesar cada burbuja para extraer texto
+        print("Extracting text from bubbles...")
+        for i, bubble in enumerate(bubbles):
+            x1, y1, x2, y2 = map(int, bubble['bbox'])
+            
+            # Validar coordenadas
+            h, w = img_cv.shape[:2]
+            x1, y1 = max(0, x1), max(0, y1)
+            x2, y2 = min(w, x2), min(h, y2)
+            
+            # Solo si el recorte es valido
+            if x2 > x1 and y2 > y1:
+                # Crop usando el Bounding Box (simple pero efectivo para OCR)
+                # En Day 6 se podria usar la mascara para limpiar mejor,
+                # pero Google Vision aguanta bien el ruido alrededor.
+                crop = img_cv[y1:y2, x1:x2]
+                
+                # Convertir a bytes jpg
+                success, encoded_image = cv2.imencode('.jpg', crop)
+                if success:
+                    content = encoded_image.tobytes()
+                    text = ocr_service.detect_text(content)
+                    bubble['text'] = text
+            else:
+                bubble['text'] = ""
+
         # Debug: Dibujar cajas
         debug_filename = f"debug_{unique_filename}"
         debug_path = os.path.join(UPLOAD_DIR, debug_filename)

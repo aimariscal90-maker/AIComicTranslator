@@ -10,16 +10,32 @@ interface UploadResponse {
   original_name: string;
 }
 
+interface ApiResponse {
+  status: string;
+  original_url: string;
+  debug_url: string;
+  clean_url?: string;
+  bubbles_count: number;
+  bubbles_data: Array<{
+    bbox: number[];
+    confidence: number;
+    class: number;
+    text?: string;
+  }>;
+}
+
 export default function Home() {
   const [isUploading, setIsUploading] = useState(false);
   const [localPreview, setLocalPreview] = useState<string | null>(null);
   const [serverImage, setServerImage] = useState<string | null>(null);
+  const [apiResponse, setApiResponse] = useState<ApiResponse | null>(null);
 
   const handleFileSelected = async (file: File) => {
     // 1. Mostrar preview local inmediato
     const objectUrl = URL.createObjectURL(file);
     setLocalPreview(objectUrl);
     setServerImage(null); // Reset server image
+    setApiResponse(null);
     setIsUploading(true);
 
     try {
@@ -36,7 +52,8 @@ export default function Home() {
         throw new Error("Upload failed");
       }
 
-      const data = await response.json();
+      const data: ApiResponse = await response.json();
+      setApiResponse(data);
 
       // 3. Mostrar imagen procesada (Debug con cajas)
       // La API devuelve: original_url, debug_url, clean_url
@@ -45,9 +62,9 @@ export default function Home() {
         setServerImage(fullUrl);
         console.log("Process success. Bubbles:", data.bubbles_count, data);
       } else {
-         // Fallback por si acaso
-         const fullUrl = `http://localhost:8000${data.original_url || data.url}`;
-         setServerImage(fullUrl);
+        // Fallback por si acaso
+        const fullUrl = `http://localhost:8000${data.original_url || (data as any).url}`;
+        setServerImage(fullUrl);
       }
 
     } catch (error) {
@@ -82,21 +99,45 @@ export default function Home() {
           <div className="space-y-2">
             <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
               <span>1. Entrada</span>
-              {isUploading && <span className="text-sm font-normal text-blue-500 animate-pulse">Subiendo...</span>}
+              {isUploading && <span className="text-sm font-normal text-blue-500 animate-pulse">Procesando (Vision + OCR)...</span>}
             </h2>
             {localPreview && (
               <ImagePreview src={localPreview} alt="Original Image" />
             )}
           </div>
 
-          {/* Result Stage (Placeholder for now) */}
-          <div className="space-y-2">
-            <h2 className="text-xl font-bold text-gray-800">2. Servidor (Round-trip)</h2>
+          {/* Result Stage */}
+          <div className="space-y-4">
+            <h2 className="text-xl font-bold text-gray-800">2. Resultados AI (Debug)</h2>
             {serverImage ? (
-              <div className="space-y-2">
+              <div className="space-y-4">
                 <ImagePreview src={serverImage} alt="Server Image" />
+
+                {/* OCR Results Panel */}
+                <div className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm">
+                  <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
+                    <h3 className="font-semibold text-gray-700">📜 Detected Text</h3>
+                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                      {apiResponse?.bubbles_count || 0} bubbles
+                    </span>
+                  </div>
+                  <div className="max-h-[300px] overflow-y-auto p-4 space-y-3">
+                    {apiResponse?.bubbles_data?.map((bubble, idx) => (
+                      <div key={idx} className="bg-gray-50 p-3 rounded border-l-4 border-green-500 text-sm">
+                        <div className="flex justify-between text-xs text-gray-500 mb-1">
+                          <span className="font-mono">Bubble #{idx + 1}</span>
+                          <span>Conf: {(bubble.confidence * 100).toFixed(1)}%</span>
+                        </div>
+                        <p className="text-gray-800 font-medium whitespace-pre-wrap">
+                          {bubble.text ? bubble.text : <span className="text-gray-400 italic">(Text not detected)</span>}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="p-2 bg-green-50 text-green-700 text-sm rounded border border-green-200">
-                  Imagen guardada exitosamente en backend.
+                  Procesamiento completo.
                 </div>
               </div>
             ) : (

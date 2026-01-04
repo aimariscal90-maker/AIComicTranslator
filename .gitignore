@@ -6,6 +6,8 @@ backend/uploads/*
 !backend/uploads/.gitkeep
 backend/models/*
 !backend/models/.gitkeep
+google_credentials.json
+backend/google_credentials.json
 
 # Frontend - Node
 frontend/node_modules/

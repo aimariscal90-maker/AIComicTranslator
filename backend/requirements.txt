@@ -6,3 +6,4 @@ opencv-python
 numpy
 requests
 huggingface_hub
+google-cloud-vision
