@@ -116,8 +116,24 @@ async def process_comic(file: UploadFile = File(...)):
                 success, encoded_image = cv2.imencode('.jpg', crop)
                 if success:
                     content = encoded_image.tobytes()
-                    text = ocr_service.detect_text(content)
+                    ocr_result = ocr_service.detect_text(content) # Ahora devuelve dict
+                    
+                    text = ocr_result.get("text", "")
+                    word_boxes = ocr_result.get("word_boxes", [])
+                    
                     bubble['text'] = text
+                    
+                    # Ajustar coordenadas de 'word_boxes' (vienen del crop, pasar a imagen global)
+                    # word_boxes es una lista de listas de tuplas: [[(x,y), (x,y)...], ...]
+                    abs_word_boxes = []
+                    for wb in word_boxes:
+                        abs_wb = []
+                        for point in wb:
+                            px, py = point
+                            # Sumar offset del crop (x1, y1)
+                            abs_wb.append((px + x1, py + y1))
+                        abs_word_boxes.append(abs_wb)
+                    bubble['word_boxes'] = abs_word_boxes
                     
                     # Traducir (Si hay texto)
                     if text and len(text.strip()) > 0:
@@ -127,6 +143,7 @@ async def process_comic(file: UploadFile = File(...)):
             else:
                 bubble['text'] = ""
                 bubble['translation'] = ""
+                bubble['word_boxes'] = []
 
         # Debug: Dibujar cajas
         debug_filename = f"debug_{unique_filename}"
@@ -135,15 +152,25 @@ async def process_comic(file: UploadFile = File(...)):
         
         # Inpainting (Remover texto)
         remover = TextRemover()
-        clean_filename = f"clean_{unique_filename}"
-        clean_path = os.path.join(UPLOAD_DIR, clean_filename)
-        remover.remove_text(file_path, bboxes=bubbles, output_path=clean_path)
+        
+        # Opcion A: Borrar Globo Entero (Backup - No usado en frontend por defecto)
+        clean_bubble_filename = f"clean_bubble_{unique_filename}"
+        clean_bubble_path = os.path.join(UPLOAD_DIR, clean_bubble_filename)
+        # Dejamos comentado o activo si quieres guardar backups. Lo dejamos activo por si acaso.
+        remover.remove_text(file_path, bboxes=bubbles, output_path=clean_bubble_path, mask_mode='bubble')
+        
+        # Opcion B: Borrar Solo Texto (Primary Strategy)
+        clean_text_filename = f"clean_text_{unique_filename}"
+        clean_text_path = os.path.join(UPLOAD_DIR, clean_text_filename)
+        remover.remove_text(file_path, bboxes=bubbles, output_path=clean_text_path, mask_mode='text')
         
         return {
             "status": "success",
             "original_url": f"/uploads/{unique_filename}",
             "debug_url": f"/uploads/{debug_filename}",
-            "clean_url": f"/uploads/{clean_filename}",
+            # "clean_url" apunta ahora a la Opcion B (Texto) por defecto
+            "clean_url": f"/uploads/{clean_text_filename}",
+            "clean_bubble_url": f"/uploads/{clean_bubble_filename}",
             "bubbles_count": len(bubbles),
             "bubbles_data": bubbles
         }

@@ -15,6 +15,8 @@ interface ApiResponse {
   original_url: string;
   debug_url: string;
   clean_url?: string;
+  clean_bubble_url?: string;
+  clean_text_url?: string;
   bubbles_count: number;
   bubbles_data: Array<{
     bbox: number[];
@@ -30,6 +32,7 @@ export default function Home() {
   const [localPreview, setLocalPreview] = useState<string | null>(null);
   const [serverImage, setServerImage] = useState<string | null>(null);
   const [apiResponse, setApiResponse] = useState<ApiResponse | null>(null);
+  const [inpaintingMode, setInpaintingMode] = useState<'bubble' | 'text'>('bubble');
 
   const handleFileSelected = async (file: File) => {
     // 1. Mostrar preview local inmediato
@@ -100,7 +103,7 @@ export default function Home() {
           <div className="space-y-2">
             <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
               <span>1. Entrada</span>
-              {isUploading && <span className="text-sm font-normal text-blue-500 animate-pulse">Procesando (Vision + OCR + Translating)...</span>}
+              {isUploading && <span className="text-sm font-normal text-blue-500 animate-pulse">Procesando (Vision + OCR + Translating + Double Inpainting)...</span>}
             </h2>
             {localPreview && (
               <ImagePreview src={localPreview} alt="Original Image" />
@@ -129,7 +132,7 @@ export default function Home() {
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-sm font-bold bg-purple-100 text-purple-700 px-2 py-0.5 rounded">PASO 2</span>
-                        <h3 className="text-sm font-bold text-gray-700">✨ Borrado Mágico</h3>
+                        <h3 className="text-sm font-bold text-gray-700">✨ Borrado Mágico (Método Texto)</h3>
                       </div>
                       <div className="border border-purple-200 rounded-lg overflow-hidden relative shadow-sm">
                         {/* eslint-disable-next-line @next/next/no-img-element */}

@@ -12,23 +12,36 @@ class OCRService:
         
         self.client = vision.ImageAnnotatorClient()
 
-    def detect_text(self, image_bytes: bytes) -> str:
+    def detect_text(self, image_content):
         """
-        Detecta texto en una imagen (formato bytes).
-        Retorna el string completo detectado.
+        Detects text in an image using Google Cloud Vision.
+        Returns a dict with 'text' and 'blocks' (coordinates).
         """
-        try:
-            image = vision.Image(content=image_bytes)
-            # DOCUMENT_TEXT_DETECTION optimizado para bloques de texto denso
-            response = self.client.document_text_detection(image=image)
-            
-            if response.error.message:
-                raise Exception(f"Google Vision API Error: {response.error.message}")
+        image = vision.Image(content=image_content)
 
-            return response.full_text_annotation.text
-        except Exception as e:
-            print(f"OCR Error: {e}")
-            return ""
+        # Usar document_text_detection para mejor precision en bloques
+        response = self.client.document_text_detection(image=image)
+        
+        if response.error.message:
+            raise Exception(f'{response.error.message}')
+
+        # El primer elemento de text_annotations es todo el texto
+        full_text = response.full_text_annotation.text if response.full_text_annotation else ""
+        
+        # Extraer bloques de palabras para la mascara fina (Method B)
+        blocks = []
+        for page in response.full_text_annotation.pages:
+            for block in page.blocks:
+                for paragraph in block.paragraphs:
+                    for word in paragraph.words:
+                        # Obtener vertices de la palabra
+                        verts = [(v.x, v.y) for v in word.bounding_box.vertices]
+                        blocks.append(verts)
+
+        return {
+            "text": full_text,
+            "word_boxes": blocks # Lista de listas de tuplas [(x,y),...]
+        }
 
     def detect_text_from_path(self, image_path: str) -> str:
         """

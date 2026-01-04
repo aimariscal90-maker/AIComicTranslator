@@ -30,9 +30,11 @@ class TextRemover:
             print(f"Error loading LaMa model: {e}")
             self.model = None
 
-    def remove_text(self, image_path, bboxes, output_path):
+    def remove_text(self, image_path, bboxes, output_path, mask_mode='bubble'):
         """
-        Borra el texto de la imagen usando las cajas/poligonos detectados.
+        Borra el texto de la imagen.
+        mask_mode='bubble': Borra todo el poligono del globo.
+        mask_mode='text': Borra solo las cajas de palabras (word_boxes) dentro del globo.
         """
         if self.model is None:
             print("Model not loaded, skipping inpainting.")
@@ -46,22 +48,36 @@ class TextRemover:
         mask = np.zeros((h, w), dtype=np.float32)
         
         for bubble in bboxes:
-            # Si tenemos poligono, usarlo
-            if bubble.get('polygon') and len(bubble['polygon']) > 0:
-                pts = np.array(bubble['polygon'], np.int32)
-                cv2.fillPoly(mask, [pts], 1.0)
+            if mask_mode == 'text' and 'word_boxes' in bubble and bubble['word_boxes']:
+                # Modo Fino: Usar coordenadas de palabras
+                # OJO: Las word_boxes son relativas al crop (recorte) o absolutas?
+                # Revisar ocr.py. Vision devuelve absolutas si se le pasa la imagen entera,
+                # pero en main.py le pasamos el crop.
+                # IMPORTANTE: En main.py necesitamos ajustar coordenadas si son relativas al crop.
+                # ASUMIREMOS aqui que 'word_boxes' vienen ya en coordenadas de la imagen original.
+                for wb in bubble['word_boxes']:
+                    pts = np.array(wb, np.int32)
+                    cv2.fillPoly(mask, [pts], 1.0)
             else:
-                # Fallback a bbox
-                x1, y1, x2, y2 = map(int, bubble['bbox'])
-                cv2.rectangle(mask, (x1, y1), (x2, y2), 1.0, -1)
+                # Modo Bruto (Fallback o Default): Usar poligono del globo
+                if bubble.get('polygon') and len(bubble['polygon']) > 0:
+                    pts = np.array(bubble['polygon'], np.int32)
+                    cv2.fillPoly(mask, [pts], 1.0)
+                else:
+                    x1, y1, x2, y2 = map(int, bubble['bbox'])
+                    cv2.rectangle(mask, (x1, y1), (x2, y2), 1.0, -1)
                 
-        # Dilatar mascara para cubrir bordes (Artifacts)
-        # Day 8 Refinement: Reducir kernel para evitar "emborronar" demasiado fondo
-        # Antes: (5,5) iter=2 -> ~10px padding. Ahora: (3,3) iter=3 -> ~6-9px pero mas suave
-        # O mejor: (5,5) iter=1 -> 5px padding. Proba (5,5) iter=1 para ser conservador
-        MASK_PADDING = 5
+        # Dilatar mascara
+        # Para texto fino, dilatar menos. Para globo entero, dilatar un poco mas.
+        if mask_mode == 'text':
+             MASK_PADDING = 3 # Mas fino para letras
+             iter_dil = 1
+        else:
+             MASK_PADDING = 5
+             iter_dil = 1
+             
         kernel = np.ones((MASK_PADDING, MASK_PADDING), np.uint8) 
-        mask = cv2.dilate(mask, kernel, iterations=1)
+        mask = cv2.dilate(mask, kernel, iterations=iter_dil)
         
         # 2. Preprocesar para LaMa
         # Resize a multiplo de 8 
