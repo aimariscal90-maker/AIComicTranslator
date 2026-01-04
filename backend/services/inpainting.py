@@ -56,8 +56,12 @@ class TextRemover:
                 cv2.rectangle(mask, (x1, y1), (x2, y2), 1.0, -1)
                 
         # Dilatar mascara para cubrir bordes (Artifacts)
-        kernel = np.ones((5, 5), np.uint8) # MASK_PADDING configurable
-        mask = cv2.dilate(mask, kernel, iterations=2)
+        # Day 8 Refinement: Reducir kernel para evitar "emborronar" demasiado fondo
+        # Antes: (5,5) iter=2 -> ~10px padding. Ahora: (3,3) iter=3 -> ~6-9px pero mas suave
+        # O mejor: (5,5) iter=1 -> 5px padding. Proba (5,5) iter=1 para ser conservador
+        MASK_PADDING = 5
+        kernel = np.ones((MASK_PADDING, MASK_PADDING), np.uint8) 
+        mask = cv2.dilate(mask, kernel, iterations=1)
         
         # 2. Preprocesar para LaMa
         # Resize a multiplo de 8 

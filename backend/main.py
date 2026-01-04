@@ -82,6 +82,7 @@ async def process_comic(file: UploadFile = File(...)):
         from services.detector import BubbleDetector
         from services.inpainting import TextRemover
         from services.ocr import OCRService
+        from services.translator import TranslatorService
         import cv2
         
         # Detector
@@ -91,11 +92,14 @@ async def process_comic(file: UploadFile = File(...)):
         # OCR Service
         ocr_service = OCRService()
         
+        # Translator Service (Day 10)
+        translator = TranslatorService(target_lang='es')
+        
         # Leer imagen para recortes
         img_cv = cv2.imread(file_path)
         
-        # Procesar cada burbuja para extraer texto
-        print("Extracting text from bubbles...")
+        # Procesar cada burbuja para extraer texto y traducir
+        print("Extracting and translating text...")
         for i, bubble in enumerate(bubbles):
             x1, y1, x2, y2 = map(int, bubble['bbox'])
             
@@ -106,9 +110,6 @@ async def process_comic(file: UploadFile = File(...)):
             
             # Solo si el recorte es valido
             if x2 > x1 and y2 > y1:
-                # Crop usando el Bounding Box (simple pero efectivo para OCR)
-                # En Day 6 se podria usar la mascara para limpiar mejor,
-                # pero Google Vision aguanta bien el ruido alrededor.
                 crop = img_cv[y1:y2, x1:x2]
                 
                 # Convertir a bytes jpg
@@ -117,8 +118,15 @@ async def process_comic(file: UploadFile = File(...)):
                     content = encoded_image.tobytes()
                     text = ocr_service.detect_text(content)
                     bubble['text'] = text
+                    
+                    # Traducir (Si hay texto)
+                    if text and len(text.strip()) > 0:
+                        bubble['translation'] = translator.translate(text)
+                    else:
+                        bubble['translation'] = ""
             else:
                 bubble['text'] = ""
+                bubble['translation'] = ""
 
         # Debug: Dibujar cajas
         debug_filename = f"debug_{unique_filename}"

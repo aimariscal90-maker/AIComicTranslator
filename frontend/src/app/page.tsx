@@ -21,6 +21,7 @@ interface ApiResponse {
     confidence: number;
     class: number;
     text?: string;
+    translation?: string;
   }>;
 }
 
@@ -99,7 +100,7 @@ export default function Home() {
           <div className="space-y-2">
             <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
               <span>1. Entrada</span>
-              {isUploading && <span className="text-sm font-normal text-blue-500 animate-pulse">Procesando (Vision + OCR)...</span>}
+              {isUploading && <span className="text-sm font-normal text-blue-500 animate-pulse">Procesando (Vision + OCR + Translating)...</span>}
             </h2>
             {localPreview && (
               <ImagePreview src={localPreview} alt="Original Image" />
@@ -128,7 +129,7 @@ export default function Home() {
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-sm font-bold bg-purple-100 text-purple-700 px-2 py-0.5 rounded">PASO 2</span>
-                        <h3 className="text-sm font-bold text-gray-700">✨ Magic Eraser (Inpainting)</h3>
+                        <h3 className="text-sm font-bold text-gray-700">✨ Borrado Mágico</h3>
                       </div>
                       <div className="border border-purple-200 rounded-lg overflow-hidden relative shadow-sm">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -142,24 +143,39 @@ export default function Home() {
                   )}
                 </div>
 
-                {/* OCR Results Panel */}
+                {/* OCR & Translation Results Panel */}
                 <div className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm">
                   <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
-                    <h3 className="font-semibold text-gray-700">📜 Detected Text</h3>
+                    <h3 className="font-semibold text-gray-700">📜 Traducción Detectada</h3>
                     <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
                       {apiResponse?.bubbles_count || 0} bubbles
                     </span>
                   </div>
-                  <div className="max-h-[300px] overflow-y-auto p-4 space-y-3">
+                  <div className="max-h-[400px] overflow-y-auto p-4 space-y-4">
                     {apiResponse?.bubbles_data?.map((bubble, idx) => (
-                      <div key={idx} className="bg-gray-50 p-3 rounded border-l-4 border-green-500 text-sm">
-                        <div className="flex justify-between text-xs text-gray-500 mb-1">
-                          <span className="font-mono">Bubble #{idx + 1}</span>
+                      <div key={idx} className="bg-gray-50 p-3 rounded border-l-4 border-indigo-500 text-sm shadow-sm">
+                        <div className="flex justify-between text-xs text-gray-500 mb-2">
+                          <span className="font-mono font-bold">Bubble #{idx + 1}</span>
                           <span>Conf: {(bubble.confidence * 100).toFixed(1)}%</span>
                         </div>
-                        <p className="text-gray-800 font-medium whitespace-pre-wrap">
-                          {bubble.text ? bubble.text : <span className="text-gray-400 italic">(Text not detected)</span>}
-                        </p>
+
+                        <div className="space-y-2">
+                          {/* Original */}
+                          <div>
+                            <span className="text-xs uppercase text-gray-400 font-bold tracking-wider">Original</span>
+                            <p className="text-gray-800 font-medium whitespace-pre-wrap bg-white p-2 rounded border border-gray-100 mt-1">
+                              {bubble.text ? bubble.text : <span className="text-gray-400 italic">(Vacio)</span>}
+                            </p>
+                          </div>
+
+                          {/* Translation */}
+                          <div>
+                            <span className="text-xs uppercase text-green-600 font-bold tracking-wider">Español 🇪🇸</span>
+                            <p className="text-green-800 font-bold whitespace-pre-wrap bg-green-50 p-2 rounded border border-green-100 mt-1">
+                              {bubble.translation ? bubble.translation : <span className="text-gray-400 italic">...</span>}
+                            </p>
+                          </div>
+                        </div>
                       </div>
                     ))}
                   </div>
