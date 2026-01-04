@@ -24,10 +24,17 @@ interface ApiResponse {
     class: number;
     text?: string;
     translation?: string;
+    translation_provider?: string;
   }>;
 }
 
 export default function Home() {
+  // ... (state vars remain same)
+  // ... (handleFileSelected remains same)
+
+  // ... (render logic)
+
+
   const [isUploading, setIsUploading] = useState(false);
   const [localPreview, setLocalPreview] = useState<string | null>(null);
   const [serverImage, setServerImage] = useState<string | null>(null);
@@ -173,7 +180,17 @@ export default function Home() {
 
                           {/* Translation */}
                           <div>
-                            <span className="text-xs uppercase text-green-600 font-bold tracking-wider">Español 🇪🇸</span>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-xs uppercase text-green-600 font-bold tracking-wider">Español 🇪🇸</span>
+                              {bubble.translation_provider && (
+                                <span className={`text-[10px] px-1.5 rounded border ${bubble.translation_provider.includes("Gemini")
+                                  ? "bg-purple-100 text-purple-700 border-purple-200"
+                                  : "bg-gray-100 text-gray-600 border-gray-200"
+                                  }`}>
+                                  {bubble.translation_provider}
+                                </span>
+                              )}
+                            </div>
                             <p className="text-green-800 font-bold whitespace-pre-wrap bg-green-50 p-2 rounded border border-green-100 mt-1">
                               {bubble.translation ? bubble.translation : <span className="text-gray-400 italic">...</span>}
                             </p>

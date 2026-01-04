@@ -137,12 +137,26 @@ async def process_comic(file: UploadFile = File(...)):
                     
                     # Traducir (Si hay texto)
                     if text and len(text.strip()) > 0:
-                        bubble['translation'] = translator.translate(text)
+                        # Limpieza para traducción (Flattening):
+                        # Convertimos "HELLO\nWORLD" en "HELLO WORLD" para que el traductor entienda el contexto.
+                        text_to_translate = text.replace('\n', ' ').replace('\r', ' ')
+                        # Corregir separación de palabras por guiones (e.g. "Amaz-\ning" -> "Amazing")
+                        text_to_translate = text_to_translate.replace('- ', '') 
+                        
+                        # Doble espacios a uno
+                        import re
+                        text_to_translate = re.sub(' +', ' ', text_to_translate).strip()
+                        
+                        trans_text, trans_provider = translator.translate(text_to_translate)
+                        bubble['translation'] = trans_text
+                        bubble['translation_provider'] = trans_provider
                     else:
                         bubble['translation'] = ""
+                        bubble['translation_provider'] = "None"
             else:
                 bubble['text'] = ""
                 bubble['translation'] = ""
+                bubble['translation_provider'] = "None"
                 bubble['word_boxes'] = []
 
         # Debug: Dibujar cajas

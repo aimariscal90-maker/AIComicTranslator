@@ -8,3 +8,5 @@ requests
 huggingface_hub
 google-cloud-vision
 deep-translator
+python-dotenv
+google-generativeai
