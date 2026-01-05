@@ -17,6 +17,7 @@ interface ApiResponse {
   clean_url?: string;
   clean_bubble_url?: string;
   clean_text_url?: string;
+  final_url?: string;
   bubbles_count: number;
   bubbles_data: Array<{
     bbox: number[];
@@ -139,15 +140,42 @@ export default function Home() {
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-sm font-bold bg-purple-100 text-purple-700 px-2 py-0.5 rounded">PASO 2</span>
-                        <h3 className="text-sm font-bold text-gray-700">✨ Borrado Mágico (Método Texto)</h3>
+                        <h3 className="text-sm font-bold text-gray-700">✨ Borrado (Limpieza)</h3>
                       </div>
                       <div className="border border-purple-200 rounded-lg overflow-hidden relative shadow-sm">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={`http://localhost:8000${apiResponse.clean_url}`}
                           alt="Cleaned Image"
+                          className="w-full h-auto opacity-80"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* FINAL RESULT */}
+                  {apiResponse?.final_url && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded">PASO 3 (FINAL)</span>
+                        <h3 className="text-sm font-bold text-gray-700">🎨 Resultado Final (Español)</h3>
+                      </div>
+                      <div className="border-2 border-green-500 rounded-lg overflow-hidden relative shadow-lg transform hover:scale-[1.02] transition-transform">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={`http://localhost:8000${apiResponse.final_url}`}
+                          alt="Final Image"
                           className="w-full h-auto"
                         />
+                        <div className="absolute bottom-2 right-2 flex gap-2">
+                          <a
+                            href={`http://localhost:8000${apiResponse.final_url}`}
+                            download
+                            className="bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-1.5 rounded-full font-bold shadow-md transition-colors"
+                          >
+                            ⬇ Descargar
+                          </a>
+                        </div>
                       </div>
                     </div>
                   )}

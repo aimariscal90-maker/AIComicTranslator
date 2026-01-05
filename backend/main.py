@@ -82,8 +82,11 @@ async def process_comic(file: UploadFile = File(...)):
         from services.detector import BubbleDetector
         from services.inpainting import TextRemover
         from services.ocr import OCRService
+        from services.inpainting import TextRemover
         from services.translator import TranslatorService
+        from services.renderer import TextRenderer
         import cv2
+        import numpy as np
         
         # Detector
         detector = BubbleDetector()
@@ -114,6 +117,51 @@ async def process_comic(file: UploadFile = File(...)):
                 
                 # Convertir a bytes jpg
                 success, encoded_image = cv2.imencode('.jpg', crop)
+                
+                # --- COLOR DETECTION Start (Contrast Mode) ---
+                try:
+                    if crop.size > 0:
+                        # 1. Detectar color de fondo (Background) - Mediana
+                        bg_color_bgr = np.median(crop, axis=(0, 1)).astype(int)
+                        # OpenCV usa BGR, convertir a int64 para calculos de distancia
+                        
+                        # 2. Calcular distancias de cada pixel al color de fondo
+                        diff = crop.astype(int) - bg_color_bgr
+                        dist = np.linalg.norm(diff, axis=2)
+                        
+                        # 3. Filtrar pixeles que son "Tinta" (muy distintos al fondo)
+                        # Threshold dinamico? Probemos estatico o basado en stddev.
+                        # Tomamos el 10% de pixeles mas distantes como "Tinta asegurada"
+                        threshold = np.percentile(dist, 90)
+                        
+                        if threshold < 20: 
+                            # Si la diferencia es muy baja, es un crop casi solido (vacio)
+                            text_color_bgr = np.array([0, 0, 0]) # Default Black
+                            # Si el fondo es oscuro (<50), default white
+                            if np.mean(bg_color_bgr) < 50:
+                                text_color_bgr = np.array([255, 255, 255])
+                        else:
+                            # Mascara de tinta
+                            mask = dist >= threshold
+                            # Mediana de los pixeles de tinta
+                            text_color_bgr = np.median(crop[mask], axis=0).astype(int)
+
+                        # Output RGB
+                        bg_color_rgb = (int(bg_color_bgr[2]), int(bg_color_bgr[1]), int(bg_color_bgr[0]))
+                        text_color_rgb = (int(text_color_bgr[2]), int(text_color_bgr[1]), int(text_color_bgr[0]))
+                        
+                    else:
+                        bg_color_rgb = (255, 255, 255)
+                        text_color_rgb = (0, 0, 0)
+                except Exception as e:
+                    print(f"Error detecting color: {e}")
+                    bg_color_rgb = (255, 255, 255)
+                    text_color_rgb = (0, 0, 0)
+                    
+                bubble['bg_color'] = bg_color_rgb
+                bubble['text_color'] = text_color_rgb
+                # --- COLOR DETECTION End ---
+                
                 if success:
                     content = encoded_image.tobytes()
                     ocr_result = ocr_service.detect_text(content) # Ahora devuelve dict
@@ -167,24 +215,35 @@ async def process_comic(file: UploadFile = File(...)):
         # Inpainting (Remover texto)
         remover = TextRemover()
         
-        # Opcion A: Borrar Globo Entero (Backup - No usado en frontend por defecto)
-        clean_bubble_filename = f"clean_bubble_{unique_filename}"
-        clean_bubble_path = os.path.join(UPLOAD_DIR, clean_bubble_filename)
-        # Dejamos comentado o activo si quieres guardar backups. Lo dejamos activo por si acaso.
-        remover.remove_text(file_path, bboxes=bubbles, output_path=clean_bubble_path, mask_mode='bubble')
+        # Opcion A: Borrar Globo Entero (Backup - DESACTIVADO POR RENDIMIENTO)
+        # clean_bubble_filename = f"clean_bubble_{unique_filename}"
+        # clean_bubble_path = os.path.join(UPLOAD_DIR, clean_bubble_filename)
+        # remover.remove_text(file_path, bboxes=bubbles, output_path=clean_bubble_path, mask_mode='bubble')
+        clean_bubble_filename = None
         
         # Opcion B: Borrar Solo Texto (Primary Strategy)
         clean_text_filename = f"clean_text_{unique_filename}"
         clean_text_path = os.path.join(UPLOAD_DIR, clean_text_filename)
         remover.remove_text(file_path, bboxes=bubbles, output_path=clean_text_path, mask_mode='text')
         
+        # 3. Text Rendering (El Gran Final)
+        renderer = TextRenderer()
+        final_filename = f"final_{unique_filename}"
+        final_path = os.path.join(UPLOAD_DIR, final_filename)
+        
+        # Usamos la imagen limpia (clean_text_path) y le pintamos encima
+        success = renderer.render_text(clean_text_path, bubbles, final_path)
+        
+        final_url_val = f"/uploads/{final_filename}" if success else None
+
         return {
             "status": "success",
             "original_url": f"/uploads/{unique_filename}",
             "debug_url": f"/uploads/{debug_filename}",
             # "clean_url" apunta ahora a la Opcion B (Texto) por defecto
             "clean_url": f"/uploads/{clean_text_filename}",
-            "clean_bubble_url": f"/uploads/{clean_bubble_filename}",
+            "clean_bubble_url": f"/uploads/{clean_bubble_filename}" if clean_bubble_filename else None,
+            "final_url": final_url_val,
             "bubbles_count": len(bubbles),
             "bubbles_data": bubbles
         }

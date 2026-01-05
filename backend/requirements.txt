@@ -10,3 +10,4 @@ google-cloud-vision
 deep-translator
 python-dotenv
 google-generativeai
+Pillow
