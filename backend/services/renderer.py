@@ -107,7 +107,10 @@ class TextRenderer:
                     bg_x2 = center_x + real_max_w // 2 + patch_padding
                     bg_y2 = text_start_y + total_h + patch_padding
                     
-                    draw.rectangle([bg_x1, bg_y1, bg_x2, bg_y2], fill=bg_color_rgba)
+                    # Dibujar parche (Rounded Rectangle para suavizar esquinas)
+                    # Radio dinámico: 20% de la altura o 10px, lo que sea menor
+                    radius = min(10, (bg_y2 - bg_y1) * 0.3)
+                    draw.rounded_rectangle([bg_x1, bg_y1, bg_x2, bg_y2], radius=radius, fill=bg_color_rgba)
 
                     # Dibujar Texto
                     text_fill = bubble.get('text_color', (0, 0, 0))

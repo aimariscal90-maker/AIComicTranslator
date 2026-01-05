@@ -118,33 +118,46 @@ async def process_comic(file: UploadFile = File(...)):
                 # Convertir a bytes jpg
                 success, encoded_image = cv2.imencode('.jpg', crop)
                 
-                # --- COLOR DETECTION Start (Contrast Mode) ---
+                # --- COLOR DETECTION Start (Contrast Mode v2 - Center Sample) ---
                 try:
                     if crop.size > 0:
-                        # 1. Detectar color de fondo (Background) - Mediana
-                        bg_color_bgr = np.median(crop, axis=(0, 1)).astype(int)
-                        # OpenCV usa BGR, convertir a int64 para calculos de distancia
+                        # Para evitar coger el borde del globo (rojo/negro) o el fondo de la viñeta (azul),
+                        # nos quedamos solo con la parte CENTRAL del crop (el "corazón" del globo).
+                        h_crop, w_crop = crop.shape[:2]
+                        # Definimos un margen de seguridad del 25% por cada lado 
+                        # (nos quedamos con el 50% central)
+                        y1_c = int(h_crop * 0.25)
+                        y2_c = int(h_crop * 0.75)
+                        x1_c = int(w_crop * 0.25)
+                        x2_c = int(w_crop * 0.75)
                         
-                        # 2. Calcular distancias de cada pixel al color de fondo
+                        # Si el crop es muy pequeñito, usamos todo
+                        if y2_c > y1_c and x2_c > x1_c:
+                            center_sample = crop[y1_c:y2_c, x1_c:x2_c]
+                        else:
+                            center_sample = crop
+
+                        # 1. Detectar color de fondo (Background) - Mediana del CENTRO
+                        bg_color_bgr = np.median(center_sample, axis=(0, 1)).astype(int)
+                        
+                        # 2. Calcular distancias (Usamos el crop entero para buscar tinta, 
+                        # pero comparando contra el bg del centro)
                         diff = crop.astype(int) - bg_color_bgr
                         dist = np.linalg.norm(diff, axis=2)
                         
-                        # 3. Filtrar pixeles que son "Tinta" (muy distintos al fondo)
-                        # Threshold dinamico? Probemos estatico o basado en stddev.
-                        # Tomamos el 10% de pixeles mas distantes como "Tinta asegurada"
+                        # 3. Filtrar pixeles que son "Tinta"
                         threshold = np.percentile(dist, 90)
                         
                         if threshold < 20: 
-                            # Si la diferencia es muy baja, es un crop casi solido (vacio)
-                            text_color_bgr = np.array([0, 0, 0]) # Default Black
-                            # Si el fondo es oscuro (<50), default white
+                            text_color_bgr = np.array([0, 0, 0]) 
                             if np.mean(bg_color_bgr) < 50:
                                 text_color_bgr = np.array([255, 255, 255])
                         else:
-                            # Mascara de tinta
                             mask = dist >= threshold
-                            # Mediana de los pixeles de tinta
-                            text_color_bgr = np.median(crop[mask], axis=0).astype(int)
+                            if np.any(mask):
+                                text_color_bgr = np.median(crop[mask], axis=0).astype(int)
+                            else:
+                                text_color_bgr = np.array([0, 0, 0])
 
                         # Output RGB
                         bg_color_rgb = (int(bg_color_bgr[2]), int(bg_color_bgr[1]), int(bg_color_bgr[0]))
