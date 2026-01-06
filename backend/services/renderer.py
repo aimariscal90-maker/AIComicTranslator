@@ -1,5 +1,5 @@
 import os
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import textwrap
 import numpy as np
 
@@ -97,22 +97,47 @@ class TextRenderer:
                         if lw > real_max_w: real_max_w = lw
 
                     # PARCHE BLANCO (Fondo Adaptativo)
-                    bg_color_rgb = bubble.get('bg_color', (255, 255, 255))
-                    bg_color_rgba = (bg_color_rgb[0], bg_color_rgb[1], bg_color_rgb[2], 245)
+                    # Origen de dibujo (top-left del bloque de texto completo)
+                    text_start_y = center_y - total_h // 2
                     
-                    # Hacemos el parche un poco más grande que el texto real
-                    patch_padding = 1
+                    # Calcular ancho máximo real del bloque (para el parche)
+                    real_max_w = 0
+                    for line in final_wrapped_lines:
+                        bbox = draw_txt.textbbox((0, 0), line, font=final_font)
+                        lw = bbox[2] - bbox[0]
+                        if lw > real_max_w: real_max_w = lw
+
+                    # PARCHE BLANCO (Fondo Adaptativo con Feathering/Blur)
+                    bg_color_rgb = bubble.get('bg_color', (255, 255, 255))
+                    bg_color_rgba = (bg_color_rgb[0], bg_color_rgb[1], bg_color_rgb[2], 255) # Opacidad base alta para el blur
+                    
+                    # Aumentamos padding para compensar el difuminado (si no, el texto pisa lo borroso)
+                    patch_padding = 4 
                     bg_x1 = center_x - real_max_w // 2 - patch_padding
                     bg_y1 = text_start_y - patch_padding
                     bg_x2 = center_x + real_max_w // 2 + patch_padding
                     bg_y2 = text_start_y + total_h + patch_padding
                     
-                    # Dibujar parche (Rounded Rectangle para suavizar esquinas)
-                    # Radio dinámico: 20% de la altura o 10px, lo que sea menor
-                    radius = min(10, (bg_y2 - bg_y1) * 0.3)
-                    draw.rounded_rectangle([bg_x1, bg_y1, bg_x2, bg_y2], radius=radius, fill=bg_color_rgba)
+                    # Logica Feathering: Dibujar parche sólido en capa aparte y difuminarlo
+                    
+                    # 1. Crear capa vacia del tamaño de la imagen (o recorte optimizado)
+                    # Usamos capa completa por simplicidad de coordenadas
+                    patch_img = Image.new("RGBA", img.size, (0,0,0,0))
+                    d_patch = ImageDraw.Draw(patch_img)
+                    
+                    # 2. Dibujar Rectangulo Redondeado Solido con el color del fondo
+                    # Fix del radio (int)
+                    radius = int(min(10, (bg_y2 - bg_y1) * 0.3))
+                    d_patch.rounded_rectangle([bg_x1, bg_y1, bg_x2, bg_y2], radius=radius, fill=bg_color_rgba)
+                    
+                    # 3. Aplicar Blur a la capa del parche (suaviza bordes)
+                    patch_blurred = patch_img.filter(ImageFilter.GaussianBlur(radius=3))
+                    
+                    # 4. Pegar sobre la imagen base (Alpha Composite)
+                    # Como patch_blurred es RGBA y img es RGBA, alpha_composite funciona perfecto
+                    img.alpha_composite(patch_blurred)
 
-                    # Dibujar Texto
+                    # Dibujar Texto (encima del parche difuminado)
                     text_fill = bubble.get('text_color', (0, 0, 0))
                     if len(text_fill) == 3:
                         text_fill = (text_fill[0], text_fill[1], text_fill[2], 255)
@@ -137,7 +162,11 @@ class TextRenderer:
                 return True
 
         except Exception as e:
-            print(f"Error rendering text: {e}")
+            import traceback
+            error_msg = f"Error rendering text: {e}\n{traceback.format_exc()}"
+            print(error_msg)
+            with open("render_error.log", "w") as f:
+                f.write(error_msg)
             return False
 
     def _wrap_text_pixels(self, text, font, max_width, draw_ctx):
