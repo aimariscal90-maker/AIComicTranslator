@@ -52,33 +52,32 @@ class TextRenderer:
                     final_line_heights = []
                     
                     # Bucle de reducción de fuente
+                    # Bucle de reducción de fuente
+                    # Day 13: Oval Wrapping Logic
                     while font_size >= min_font_size:
                         font = self._load_font(font_size)
                         
-                        # Intentar wrapear a max_w_px con esta fuente
-                        wrapped_lines = self._wrap_text_pixels(text_content, font, max_w_px, draw_txt)
+                        # Intentar wrapear usando algoritmo de elipse/ovalo
+                        wrapped_lines = self._wrap_text_oval(text_content, font, w, h, draw_txt)
                         
-                        # Calcular altura total
-                        line_heights = [draw_txt.textbbox((0, 0), line, font=font)[3] - draw_txt.textbbox((0, 0), line, font=font)[1] for line in wrapped_lines]
-                        # Sumar alturas + un poco de leading (20% de font size)
-                        leading = int(font_size * 0.2)
-                        total_text_height = sum(line_heights) + (len(wrapped_lines) - 1) * leading
-                        
-                        if total_text_height <= max_h_px:
-                            # CABE!
-                            final_wrapped_lines = wrapped_lines
-                            final_font = font
-                            final_line_heights = line_heights
-                            break
+                        if wrapped_lines:
+                             # ÉXITO: El texto cabe en el óvalo con este tamaño de fuente
+                             final_wrapped_lines = wrapped_lines
+                             final_font = font
+                             # Calculamos alturas para el renderizado posterior
+                             final_line_heights = [draw_txt.textbbox((0, 0), line, font=font)[3] - draw_txt.textbbox((0, 0), line, font=font)[1] for line in wrapped_lines]
+                             break
                         else:
-                            font_size -= 2 # Reducir
+                             # No cabe, probamos fuente mas pequeña
+                             font_size -= 2 
                     
-                    # Fallback si no cabe ni con min_size
-                    if final_font is None:
+                    # Fallback si no cabe ni con min_size (usamos wrapping rectangular clásico a fuerza bruta)
+                    if not final_wrapped_lines:
                         font_size = min_font_size
                         final_font = self._load_font(font_size)
-                        final_wrapped_lines = self._wrap_text_pixels(text_content, final_font, max_w_px, draw_txt)
-                        # Recalcular alturas para fallback
+                        # Wrapping rectangular forzoso
+                        max_w_fallback = w * 0.8
+                        final_wrapped_lines = self._wrap_text_pixels(text_content, final_font, max_w_fallback, draw_txt)
                         final_line_heights = [draw_txt.textbbox((0, 0), line, font=final_font)[3] - draw_txt.textbbox((0, 0), line, font=final_font)[1] for line in final_wrapped_lines]
 
                     # --- DIBUJAR ---
@@ -190,6 +189,106 @@ class TextRenderer:
             lines.append(' '.join(current_line))
             
         return lines
+
+    def _wrap_text_oval(self, text, font, bubble_w, bubble_h, draw_ctx):
+        """
+        Wraps text into lines trying to fit into an oval shape defined by bubble_w and bubble_h.
+        Iteratively tries increasing number of lines to fit the text.
+        Returns list of strings if successful, or [] if it fails to fit even with max lines.
+        """
+        words = text.split()
+        if not words:
+            return []
+            
+        # Parametros de fuente
+        bbox = draw_ctx.textbbox((0, 0), "Aj", font=font) # Altura de referencia
+        line_height_raw = bbox[3] - bbox[1]
+        leading = int(line_height_raw * 0.2)
+        total_line_height = line_height_raw + leading
+        
+        # Radios de la elipse (con un margen de seguridad interno del 15%)
+        # El 15% simula que el texto no toque los bordes curvos
+        a = (bubble_w / 2) * 0.85 
+        b = (bubble_h / 2) * 0.85
+        
+        # Intentar encajar en N líneas (de 1 a 20)
+        # Si con N lineas la altura total excede el alto del globo, paramos.
+        for num_lines in range(1, 21):
+            # 1. Verificar altura total
+            # Altura del bloque de texto = N * line_height - last_leading
+            block_height = num_lines * total_line_height - leading
+            if block_height > (b * 2):
+                # Ya no cabe verticalmente
+                break
+                
+            # 2. Calcular anchos disponibles para cada linea
+            # Asumimos que el bloque de texto está centrado verticalmente en la elipse (y=0)
+            # Calculamos la coordenada Y del centro de cada linea
+            center_y_offset = (block_height / 2)
+            
+            # Vector de anchos permitidos por linea
+            allowed_widths = []
+            possible_config = True
+            
+            for i in range(num_lines):
+                # Posicion Y relativa al centro de la elipse
+                # i=0 es la linea superior. Su 'top' es -block_height/2.
+                # Su centro es -block_height/2 + (total_line_height * i) + (line_height_raw/2)
+                # Simplificación: mid_y de la linea i
+                line_mid_y = (-block_height / 2) + (i * total_line_height) + (line_height_raw / 2)
+                
+                # Ecuacion elipse: x^2/a^2 + y^2/b^2 = 1  => x = a * sqrt(1 - y^2/b^2)
+                # Ancho disponible = 2 * x based on y
+                if abs(line_mid_y) >= b:
+                    width_at_y = 0
+                else:
+                    width_at_y = 2 * a * np.sqrt(1 - (line_mid_y / b)**2)
+                
+                if width_at_y < 10: # Muy estrecho (arriba/abajo extremos)
+                    possible_config = False
+                    break
+                allowed_widths.append(width_at_y)
+            
+            if not possible_config:
+                continue
+                
+            # 3. Intentar verter las palabras en estos huecos
+            current_lines = []
+            word_idx = 0
+            all_words_fit = True
+            
+            for line_idx in range(num_lines):
+                if word_idx >= len(words):
+                    break # Ya metimos todas
+                    
+                max_w_this_line = allowed_widths[line_idx]
+                current_line_words = []
+                
+                while word_idx < len(words):
+                    next_word = words[word_idx]
+                    # Probar añadir
+                    test_str = ' '.join(current_line_words + [next_word])
+                    w_text = draw_ctx.textbbox((0, 0), test_str, font=font)[2] - draw_ctx.textbbox((0, 0), test_str, font=font)[0]
+                    
+                    if w_text <= max_w_this_line:
+                        current_line_words.append(next_word)
+                        word_idx += 1
+                    else:
+                        # No cabe, pasamos a siguiente linea
+                        break
+                        
+                current_lines.append(' '.join(current_line_words))
+            
+            # Al terminar las lineas, ¿quedan palabras hueérfanas?
+            if word_idx < len(words):
+                # No cupo en esta configuración de N líneas
+                continue # Probar con N+1
+            else:
+                # ÉXITO: Cupo todo
+                return current_lines
+                
+        # Si salimos del bucle es que no se encontró configuración válida
+        return []
 
     def _load_font(self, size):
         # Prioridad: Fuente Comic descargada
