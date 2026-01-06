@@ -111,33 +111,20 @@ class TextRenderer:
                     bg_color_rgb = bubble.get('bg_color', (255, 255, 255))
                     bg_color_rgba = (bg_color_rgb[0], bg_color_rgb[1], bg_color_rgb[2], 255) # Opacidad base alta para el blur
                     
-                    # Aumentamos padding para compensar el difuminado (si no, el texto pisa lo borroso)
-                    patch_padding = 4 
+                    # Aumentamos padding ligeramente
+                    patch_padding = 2
                     bg_x1 = center_x - real_max_w // 2 - patch_padding
                     bg_y1 = text_start_y - patch_padding
                     bg_x2 = center_x + real_max_w // 2 + patch_padding
                     bg_y2 = text_start_y + total_h + patch_padding
                     
-                    # Logica Feathering: Dibujar parche sólido en capa aparte y difuminarlo
+                    # Dibujar parche (Rounded Rectangle Solido sin Blur)
+                    h_patch = bg_y2 - bg_y1
+                    radius = int(min(10, h_patch * 0.3))
                     
-                    # 1. Crear capa vacia del tamaño de la imagen (o recorte optimizado)
-                    # Usamos capa completa por simplicidad de coordenadas
-                    patch_img = Image.new("RGBA", img.size, (0,0,0,0))
-                    d_patch = ImageDraw.Draw(patch_img)
-                    
-                    # 2. Dibujar Rectangulo Redondeado Solido con el color del fondo
-                    # Fix del radio (int)
-                    radius = int(min(10, (bg_y2 - bg_y1) * 0.3))
-                    d_patch.rounded_rectangle([bg_x1, bg_y1, bg_x2, bg_y2], radius=radius, fill=bg_color_rgba)
-                    
-                    # 3. Aplicar Blur a la capa del parche (suaviza bordes)
-                    patch_blurred = patch_img.filter(ImageFilter.GaussianBlur(radius=3))
-                    
-                    # 4. Pegar sobre la imagen base (Alpha Composite)
-                    # Como patch_blurred es RGBA y img es RGBA, alpha_composite funciona perfecto
-                    img.alpha_composite(patch_blurred)
+                    draw.rounded_rectangle([bg_x1, bg_y1, bg_x2, bg_y2], radius=radius, fill=bg_color_rgba)
 
-                    # Dibujar Texto (encima del parche difuminado)
+                    # Dibujar Texto
                     text_fill = bubble.get('text_color', (0, 0, 0))
                     if len(text_fill) == 3:
                         text_fill = (text_fill[0], text_fill[1], text_fill[2], 255)
