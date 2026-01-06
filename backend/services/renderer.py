@@ -22,7 +22,10 @@ class TextRenderer:
                 draw_txt = ImageDraw.Draw(txt_layer)
 
                 for bubble in bubbles:
-                    text_content = bubble.get('translation', '')
+                    # Obtenemos la traduccion pero limpiamos la etiqueta [SFX] si existe para que no salga en la imagen
+                    raw_trans = bubble.get('translation', '')
+                    text_content = raw_trans.replace('[SFX] ', '').replace('[SFX]', '') # Doble limpieza por si acaso
+                    
                     if not text_content:
                         continue
                         
@@ -189,10 +192,13 @@ class TextRenderer:
         return lines
 
     def _load_font(self, size):
+        # Prioridad: Fuente Comic descargada
         try:
-            return ImageFont.truetype("arial.ttf", size)
+            return ImageFont.truetype("comic.ttf", size)
         except:
-             try:
-                 return ImageFont.load_default()
-             except:
-                 return ImageFont.load_default()
+            # Fallback a Arial
+            try:
+                return ImageFont.truetype("arial.ttf", size)
+            except:
+                # Fallback final
+                return ImageFont.load_default()

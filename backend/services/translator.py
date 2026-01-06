@@ -51,7 +51,8 @@ class TranslatorService:
                     f"Translate the following text from English (or source language) to Spanish (Spain). "
                     f"Keep the translation concise to fit in a speech bubble. "
                     f"Maintain the slang, tone, and character voice. "
-                    f"Do NOT add explanations, notes, or quotes. Just the translation. "
+                    f"If the text is a Sound Effect (SFX) or Onomatopoeia (e.g. BOOM, SPLASH), prepend '[SFX] ' to the translation. "
+                    f"Do NOT add explanations, notes, or quotes. Just the translation (with optional tag). "
                     f"Text: \"{text}\""
                 )
                 
