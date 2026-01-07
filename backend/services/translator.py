@@ -154,3 +154,75 @@ Just the pure translations."""
             # Fallback a traducción individual
             results = [self.translate(text)[0] for text in texts_list]
             return results, "Gemini Flash (Individual Fallback)"
+
+    def classify_bubbles_batch(self, texts_list):
+        """
+        Clasifica el tipo de cada bocadillo usando LLM.
+        
+        Input: ["Hello!", "BOOM!", "I think..."]
+        Output: ["speech", "sfx", "thought"]
+        
+        Día 25: Clasificación automática por tipo.
+        """
+        if not texts_list or not any(t.strip() for t in texts_list):
+            return ["speech"] * len(texts_list)
+        
+        if not self.model:
+            # Sin modelo LLM, asumir speech
+            return ["speech"] * len(texts_list)
+        
+        try:
+            # Formatear textos con números
+            texts_formatted = "\n".join([f"{i+1}. {text[:50]}" for i, text in enumerate(texts_list) if text.strip()])
+            
+            # Prompt de clasificación
+            prompt = f"""Classify each comic bubble text into ONE category:
+
+Categories:
+- speech: Normal dialogue between characters
+- thought: Internal thoughts (often in cloud bubbles)
+- shout: Yelling, emphasis, strong emotions
+- narration: Narrator text (usually in rectangular boxes)
+- sfx: Sound effects or onomatopoeia (BOOM, SPLASH, etc.)
+
+Texts to classify:
+{texts_formatted}
+
+Respond ONLY with the categories, one per line, in the SAME ORDER.
+Use ONLY these words: speech, thought, shout, narration, sfx
+Example response:
+speech
+sfx
+thought"""
+
+            response = self.model.generate_content(prompt)
+            classifications_text = response.text.strip()
+            
+            # Parsear respuesta
+            lines = classifications_text.split('\n')
+            classifications = []
+            
+            valid_types = ["speech", "thought", "shout", "narration", "sfx"]
+            
+            for line in lines:
+                cleaned = line.strip().lower()
+                
+                # Extraer solo la categoría si hay texto extra
+                for valid_type in valid_types:
+                    if valid_type in cleaned:
+                        classifications.append(valid_type)
+                        break
+                else:
+                    # Default a speech si no se encuentra categoría válida
+                    classifications.append("speech")
+            
+            # Asegurar mismo número de clasificaciones
+            while len(classifications) < len(texts_list):
+                classifications.append("speech")
+            
+            return classifications[:len(texts_list)]
+            
+        except Exception as e:
+            print(f"Bubble classification error: {e}")
+            # Fallback: asumir todo speech
+            return ["speech"] * len(texts_list)

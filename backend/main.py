@@ -191,6 +191,32 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
                 bubble['translation_provider'] = "None"
                 bubble['word_boxes'] = []
 
+        # DAY 25: Bubble Classification
+        # Clasificar tipos ANTES de traducir
+        bubbles_with_text = [(i, b) for i, b in enumerate(bubbles) if b.get('clean_text', '').strip()]
+        
+        if bubbles_with_text:
+            texts_for_classification = [b['clean_text'] for _, b in bubbles_with_text]
+            
+            try:
+                print(f"[DAY 25] Classifying {len(texts_for_classification)} bubbles...")
+                bubble_types = translator.classify_bubbles_batch(texts_for_classification)
+                
+                # Asignar tipos
+                for idx, (i, bubble) in enumerate(bubbles_with_text):
+                    if idx < len(bubble_types):
+                        bubbles[i]['bubble_type'] = bubble_types[idx]
+                    else:
+                        bubbles[i]['bubble_type'] = "speech"
+                        
+                print(f"[DAY 25] Classification complete. Types: {set(bubble_types)}")
+                
+            except Exception as e:
+                print(f"[ERROR] Bubble classification failed: {e}")
+                # Fallback: todos speech
+                for i, _ in bubbles_with_text:
+                    bubbles[i]['bubble_type'] = "speech"
+        
         # DAY 24: Batch Contextual Translation
         # Recopilar textos para traducción contextual
         bubbles_with_text = [(i, b) for i, b in enumerate(bubbles) if b.get('clean_text', '').strip()]
