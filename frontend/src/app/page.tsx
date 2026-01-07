@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Dropzone from "@/components/Dropzone";
 import ImagePreview from "@/components/ImagePreview";
@@ -35,21 +35,42 @@ interface ApiResponse {
 }
 
 export default function Home() {
-  const [isUploading, setIsUploading] = useState(false);
   const [localPreview, setLocalPreview] = useState<string | null>(null);
   const [serverImage, setServerImage] = useState<string | null>(null);
-  const [apiResponse, setApiResponse] = useState<ApiResponse | null>(null);
 
   // Polling State (Day 17)
   const [jobId, setJobId] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [currentStep, setCurrentStep] = useState("Esperando...");
+  const [currentStep, setCurrentStep] = useState("");
+  const [apiResponse, setApiResponse] = useState<any>(null);
+  const [viewMode, setViewMode] = useState<"before-after" | "debug">("before-after");
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingBubble, setEditingBubble] = useState<{ index: number, text: string, font: string } | null>(null);
 
-  // UX State (Day 18)
-  const [viewMode, setViewMode] = useState<"split" | "compare">("split");
+  // Day 23: Project Selection
+  const [projects, setProjects] = useState<any[]>([]);
+  const [selectedProject, setSelectedProject] = useState<string | null>(null);
+  const [showCreateProject, setShowCreateProject] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
 
-  // Interactive Editing State
-  const [editingBubble, setEditingBubble] = useState<{ index: number; text: string; font?: string } | null>(null);
+  // Fetch projects on mount
+  useEffect(() => {
+    fetchProjects();
+  }, []);
+
+  const fetchProjects = async () => {
+    try {
+      const res = await fetch("http://localhost:8000/projects");
+      if (res.ok) {
+        const data = await res.json();
+        setProjects(data);
+      }
+    } catch (error) {
+      console.error("Error fetching projects:", error);
+    }
+  };
   const [imgDims, setImgDims] = useState<{ w: number; h: number } | null>(null);
   const [fontSelector, setFontSelector] = useState("ComicNeue"); // Global Font Selector
 
@@ -111,6 +132,11 @@ export default function Home() {
       const formData = new FormData();
       formData.append("file", file);
 
+      // Day 23: Include project_id if selected
+      if (selectedProject) {
+        formData.append("project_id", selectedProject);
+      }
+
       const response = await fetch("http://localhost:8000/process", {
         method: "POST",
         body: formData,
@@ -164,6 +190,28 @@ export default function Home() {
             </div>
           </div>
         </header>
+
+        {/* Project Selection (Day 23) */}
+        <section className="bg-white p-4 rounded-xl shadow-sm">
+          <label className="block text-sm font-semibold text-gray-700 mb-2">
+            📁 Proyecto (opcional)
+          </label>
+          <select
+            value={selectedProject || ""}
+            onChange={(e) => setSelectedProject(e.target.value || null)}
+            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+          >
+            <option value="">Sin proyecto (temporal)</option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-500 mt-2">
+            Selecciona un proyecto para guardar esta página permanentemente
+          </p>
+        </section>
 
         {/* Upload Section */}
         <section className="bg-white p-6 rounded-xl shadow-sm">

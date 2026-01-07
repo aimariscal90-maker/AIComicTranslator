@@ -70,7 +70,7 @@ async def upload_image(file: UploadFile = File(...)):
     }
 
 # --- ASYNC TASK LOGIC ---
-def process_comic_task(job_id: str, file_path: str, unique_filename: str):
+def process_comic_task(job_id: str, file_path: str, unique_filename: str, project_id: str = None):
     try:
         job_manager.update_job(job_id, status="processing", progress=10, step="Iniciando Modelos AI...")
         
@@ -223,7 +223,50 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str):
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(bubbles, f, default=str, ensure_ascii=False)
 
-        # 6. Update Job Complete
+        
+        # 6. Guardar en Base de Datos (Day 23)
+        if project_id:
+            try:
+                from database import SessionLocal
+                db = SessionLocal()
+                
+                # Crear registro Page
+                page = Page(
+                    project_id=project_id,
+                    filename=unique_filename,
+                    original_url=f"/uploads/{unique_filename}",
+                    final_url=final_url_val,
+                    debug_url=f"/uploads/{debug_filename}",
+                    clean_url=f"/uploads/{clean_text_filename}",
+                    status="completed"
+                )
+                db.add(page)
+                db.commit()
+                db.refresh(page)
+                
+                # Crear registros Bubble
+                for bubble_data in bubbles:
+                    bubble = Bubble(
+                        page_id=page.id,
+                        bbox=bubble_data['bbox'],
+                        original_text=bubble_data.get('text', ''),
+                        translated_text=bubble_data.get('translation', ''),
+                        font=bubble_data.get('font', 'ComicNeue'),
+                        confidence=int(bubble_data.get('confidence', 0)),
+                        bubble_type='speech',  # Por ahora todos speech
+                        translation_provider=bubble_data.get('translation_provider', 'Unknown')
+                    )
+                    db.add(bubble)
+                db.commit()
+                db.close()
+                
+                print(f"[DB] Page saved: {page.id} with {len(bubbles)} bubbles")
+            except Exception as db_error:
+                print(f"[DB ERROR] Failed to save to database: {db_error}")
+                import traceback
+                traceback.print_exc()
+        
+        # 7. Update Job Complete
         result_data = {
             "id": unique_filename,
             "filename": unique_filename,
@@ -243,8 +286,11 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str):
         traceback.print_exc()
         job_manager.update_job(job_id, status="failed", error=str(e), step="Error Interno")
 
+class ProcessRequest(BaseModel):
+    project_id: Optional[str] = None
+
 @app.post("/process")
-async def process_comic(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+async def process_comic(background_tasks: BackgroundTasks, file: UploadFile = File(...), project_id: Optional[str] = None):
     # 1. Validar y Guardar imagen
     if file.content_type and not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File is not an image")
@@ -261,7 +307,7 @@ async def process_comic(background_tasks: BackgroundTasks, file: UploadFile = Fi
 
     # 2. Crear Job y Encolar
     job_id = job_manager.create_job()
-    background_tasks.add_task(process_comic_task, job_id, file_path, unique_filename)
+    background_tasks.add_task(process_comic_task, job_id, file_path, unique_filename, project_id)
     
     return {"job_id": job_id, "status": "queued"}
 
@@ -331,7 +377,30 @@ async def update_bubble(filename: str, request: UpdateBubbleRequest):
         final_filename = f"final_{filename}.jpg"
         final_path = os.path.join(UPLOAD_DIR, final_filename)
         
+        
         renderer.render_text(clean_img_pil, bubbles, final_path)
+        
+        # 4. Actualizar en Base de Datos (Day 23)
+        try:
+            from database import SessionLocal
+            db = SessionLocal()
+            
+            # Buscar página por filename
+            page = db.query(Page).filter(Page.filename == filename).first()
+            
+            if page and page.bubbles:
+                # Buscar bubble por índice (asumiendo mismo orden que en JSON)
+                if request.bubble_index < len(page.bubbles):
+                    bubble_db = page.bubbles[request.bubble_index]
+                    bubble_db.translated_text = request.new_text
+                    bubble_db.font = request.font
+                    db.commit()
+                    print(f"[DB] Bubble {bubble_db.id} updated in database")
+            
+            db.close()
+        except Exception as db_error:
+            print(f"[DB WARNING] Failed to update bubble in database: {db_error}")
+            # No lanzamos error, la edición en JSON ya está hecha
         
         return {
             "status": "updated",
