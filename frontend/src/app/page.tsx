@@ -38,9 +38,51 @@ export default function Home() {
   const [serverImage, setServerImage] = useState<string | null>(null);
   const [apiResponse, setApiResponse] = useState<ApiResponse | null>(null);
 
+  // Polling State (Day 17)
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [currentStep, setCurrentStep] = useState("Esperando...");
+
   // Interactive Editing State
   const [editingBubble, setEditingBubble] = useState<{ index: number; text: string; font?: string } | null>(null);
   const [imgDims, setImgDims] = useState<{ w: number; h: number } | null>(null);
+  const [fontSelector, setFontSelector] = useState("ComicNeue"); // Global Font Selector
+
+  const pollJobStatus = async (id: string) => {
+    try {
+      const res = await fetch(`http://localhost:8000/jobs/${id}`);
+      if (!res.ok) return; // Keep trying or handle error
+      const job = await res.json();
+
+      setProgress(job.progress || 0);
+      setCurrentStep(job.step || "Procesando...");
+
+      if (job.status === "completed") {
+        setApiResponse(job.result);
+
+        // Set Server Image Logic
+        if (job.result.debug_url) {
+          setServerImage(`http://localhost:8000${job.result.debug_url}`);
+        } else {
+          setServerImage(`http://localhost:8000${job.result.original_url}`);
+        }
+        setIsUploading(false);
+        setJobId(null); // Stop polling indicator logic
+      } else if (job.status === "failed") {
+        console.error("Job Failed:", job.error);
+        alert(`Error en el proceso: ${job.error}`);
+        setIsUploading(false);
+        setJobId(null);
+      } else {
+        // Continue polling
+        setTimeout(() => pollJobStatus(id), 1000);
+      }
+    } catch (e) {
+      console.error("Polling error", e);
+      // Retry in 2s
+      setTimeout(() => pollJobStatus(id), 2000);
+    }
+  };
 
   const handleFileSelected = async (file: File) => {
     // 1. Mostrar preview local inmediato
@@ -49,7 +91,12 @@ export default function Home() {
     setServerImage(null);
     setApiResponse(null);
     setImgDims(null);
+
+    // Reset Polling UI
     setIsUploading(true);
+    setProgress(0);
+    setCurrentStep("Subiendo Imagen...");
+    setJobId(null);
 
     try {
       // 2. Subir al backend
@@ -65,22 +112,21 @@ export default function Home() {
         throw new Error("Upload failed");
       }
 
-      const data: ApiResponse = await response.json();
-      setApiResponse(data);
+      const data = await response.json();
 
-      // 3. Mostrar imagen procesada (Debug con cajas)
-      if (data.debug_url) {
-        const fullUrl = `http://localhost:8000${data.debug_url}`;
-        setServerImage(fullUrl);
+      // 3. Iniciar Polling si recibimos Job ID
+      if (data.job_id) {
+        setJobId(data.job_id);
+        pollJobStatus(data.job_id);
       } else {
-        const fullUrl = `http://localhost:8000${data.original_url}`;
-        setServerImage(fullUrl);
+        // Fallback legacy (si el backend devuelve directo data, aunque ya no deberia)
+        setApiResponse(data);
+        setIsUploading(false);
       }
 
     } catch (error) {
       console.error("Error uploading:", error);
       alert("Error al subir la imagen. Asegúrate de que el Backend está corriendo en puerto 8000.");
-    } finally {
       setIsUploading(false);
     }
   };
@@ -109,8 +155,23 @@ export default function Home() {
           <div className="space-y-2">
             <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
               <span>1. Entrada</span>
-              {isUploading && <span className="text-sm font-normal text-blue-500 animate-pulse">Procesando (Vision + OCR + Translating + Double Inpainting)...</span>}
+              {isUploading && (
+                <span className="text-sm font-normal text-blue-600 bg-blue-50 px-2 py-1 rounded-full animate-pulse border border-blue-200">
+                  ⏳ {currentStep} ({progress}%)
+                </span>
+              )}
             </h2>
+
+            {/* Progress Bar Visual */}
+            {isUploading && (
+              <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4 overflow-hidden">
+                <div
+                  className="bg-blue-600 h-2.5 rounded-full transition-all duration-500 ease-out"
+                  style={{ width: `${progress}%` }}
+                ></div>
+              </div>
+            )}
+
             {localPreview && (
               <ImagePreview src={localPreview} alt="Original Image" />
             )}

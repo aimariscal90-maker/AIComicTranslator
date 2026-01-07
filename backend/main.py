@@ -1,11 +1,14 @@
 import shutil
 import uuid
 import os
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+from services.queue_manager import JobManager
 
 app = FastAPI(title="AI Comic Translator API", version="0.1.0")
+job_manager = JobManager()
 
 # Configuración de Paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -60,42 +63,31 @@ async def upload_image(file: UploadFile = File(...)):
         "original_name": file.filename
     }
 
-@app.post("/process")
-async def process_comic(file: UploadFile = File(...)):
-    # 1. Validar y Guardar imagen (reutilizamos logica basica)
-    if file.content_type and not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="File is not an image")
-    
-    file_extension = file.filename.split(".")[-1] if "." in file.filename else "jpg"
-    unique_filename = f"{uuid.uuid4()}.{file_extension}"
-    file_path = os.path.join(UPLOAD_DIR, unique_filename)
-    
+# --- ASYNC TASK LOGIC ---
+def process_comic_task(job_id: str, file_path: str, unique_filename: str):
     try:
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-    # 2. Procesamiento AI
-    try:
+        job_manager.update_job(job_id, status="processing", progress=10, step="Iniciando Modelos AI...")
+        
         # Lazy imports para evitar errores si las dependencias aun se instalan
         from services.detector import BubbleDetector
         from services.inpainting import TextRemover
         from services.ocr import OCRService
-        from services.inpainting import TextRemover
         from services.translator import TranslatorService
         from services.renderer import TextRenderer
         import cv2
         import numpy as np
-        
-        # Detector
+
+        # 1. Detección
+        job_manager.update_job(job_id, progress=20, step="Detectando Bocadillos 🕵️")
         detector = BubbleDetector()
         bubbles = detector.detect(file_path)
         
-        # OCR Service
+        # 2. OCR
+        job_manager.update_job(job_id, progress=40, step="Leyendo Texto (OCR) 📖")
         ocr_service = OCRService()
         
-        # Translator Service (Day 10)
+        # 3. Traducción
+        job_manager.update_job(job_id, progress=50, step="Traduciendo (Gemini) 🤖")
         translator = TranslatorService(target_lang='es')
         
         # Leer imagen para recortes
@@ -121,31 +113,20 @@ async def process_comic(file: UploadFile = File(...)):
                 # --- COLOR DETECTION Start (Contrast Mode v2 - Center Sample) ---
                 try:
                     if crop.size > 0:
-                        # Para evitar coger el borde del globo (rojo/negro) o el fondo de la viñeta (azul),
-                        # nos quedamos solo con la parte CENTRAL del crop (el "corazón" del globo).
                         h_crop, w_crop = crop.shape[:2]
-                        # Definimos un margen de seguridad del 25% por cada lado 
-                        # (nos quedamos con el 50% central)
                         y1_c = int(h_crop * 0.25)
                         y2_c = int(h_crop * 0.75)
                         x1_c = int(w_crop * 0.25)
                         x2_c = int(w_crop * 0.75)
                         
-                        # Si el crop es muy pequeñito, usamos todo
                         if y2_c > y1_c and x2_c > x1_c:
                             center_sample = crop[y1_c:y2_c, x1_c:x2_c]
                         else:
                             center_sample = crop
 
-                        # 1. Detectar color de fondo (Background) - Mediana del CENTRO
                         bg_color_bgr = np.median(center_sample, axis=(0, 1)).astype(int)
-                        
-                        # 2. Calcular distancias (Usamos el crop entero para buscar tinta, 
-                        # pero comparando contra el bg del centro)
                         diff = crop.astype(int) - bg_color_bgr
                         dist = np.linalg.norm(diff, axis=2)
-                        
-                        # 3. Filtrar pixeles que son "Tinta"
                         threshold = np.percentile(dist, 90)
                         
                         if threshold < 20: 
@@ -159,10 +140,8 @@ async def process_comic(file: UploadFile = File(...)):
                             else:
                                 text_color_bgr = np.array([0, 0, 0])
 
-                        # Output RGB
                         bg_color_rgb = (int(bg_color_bgr[2]), int(bg_color_bgr[1]), int(bg_color_bgr[0]))
                         text_color_rgb = (int(text_color_bgr[2]), int(text_color_bgr[1]), int(text_color_bgr[0]))
-                        
                     else:
                         bg_color_rgb = (255, 255, 255)
                         text_color_rgb = (0, 0, 0)
@@ -177,37 +156,26 @@ async def process_comic(file: UploadFile = File(...)):
                 
                 if success:
                     content = encoded_image.tobytes()
-                    ocr_result = ocr_service.detect_text(content) # Ahora devuelve dict
+                    ocr_result = ocr_service.detect_text(content)
                     
                     text = ocr_result.get("text", "")
                     word_boxes = ocr_result.get("word_boxes", [])
-                    
                     bubble['text'] = text
                     
-                    # Ajustar coordenadas de 'word_boxes' (vienen del crop, pasar a imagen global)
-                    # word_boxes es una lista de listas de tuplas: [[(x,y), (x,y)...], ...]
                     abs_word_boxes = []
                     for wb in word_boxes:
                         abs_wb = []
                         for point in wb:
                             px, py = point
-                            # Sumar offset del crop (x1, y1)
                             abs_wb.append((px + x1, py + y1))
                         abs_word_boxes.append(abs_wb)
                     bubble['word_boxes'] = abs_word_boxes
                     
-                    # Traducir (Si hay texto)
                     if text and len(text.strip()) > 0:
-                        # Limpieza para traducción (Flattening):
-                        # Convertimos "HELLO\nWORLD" en "HELLO WORLD" para que el traductor entienda el contexto.
                         text_to_translate = text.replace('\n', ' ').replace('\r', ' ')
-                        # Corregir separación de palabras por guiones (e.g. "Amaz-\ning" -> "Amazing")
                         text_to_translate = text_to_translate.replace('- ', '') 
-                        
-                        # Doble espacios a uno
                         import re
                         text_to_translate = re.sub(' +', ' ', text_to_translate).strip()
-                        
                         trans_text, trans_provider = translator.translate(text_to_translate)
                         bubble['translation'] = trans_text
                         bubble['translation_provider'] = trans_provider
@@ -220,65 +188,85 @@ async def process_comic(file: UploadFile = File(...)):
                 bubble['translation_provider'] = "None"
                 bubble['word_boxes'] = []
 
-        # Debug: Dibujar cajas
+        # 4. Inpainting
+        job_manager.update_job(job_id, progress=70, step="Borrando Texto Original 🎨")
+        
         debug_filename = f"debug_{unique_filename}"
         debug_path = os.path.join(UPLOAD_DIR, debug_filename)
         detector.draw_boxes(file_path, bubbles, debug_path)
         
-        # Inpainting (Remover texto)
         remover = TextRemover()
-        
-        # Opcion A: Borrar Globo Entero (Backup - DESACTIVADO POR RENDIMIENTO)
-        # clean_bubble_filename = f"clean_bubble_{unique_filename}"
-        # clean_bubble_path = os.path.join(UPLOAD_DIR, clean_bubble_filename)
-        # remover.remove_text(file_path, bboxes=bubbles, output_path=clean_bubble_path, mask_mode='bubble')
-        clean_bubble_filename = None
-        
-        # Opcion B: Borrar Solo Texto (Primary Strategy)
         clean_text_filename = f"clean_text_{unique_filename}"
         clean_text_path = os.path.join(UPLOAD_DIR, clean_text_filename)
+        clean_bubble_filename = None
         remover.remove_text(file_path, bboxes=bubbles, output_path=clean_text_path, mask_mode='text')
         
-        # 3. Text Rendering (El Gran Final)
+        # 5. Text Rendering (El Gran Final)
+        job_manager.update_job(job_id, progress=90, step="Renderizando Español ✍️")
         renderer = TextRenderer()
         final_filename = f"final_{unique_filename}"
         final_path = os.path.join(UPLOAD_DIR, final_filename)
         
-        # Usamos la imagen limpia (clean_text_path) y le pintamos encima
         success = renderer.render_text(clean_text_path, bubbles, final_path)
-        
         final_url_val = f"/uploads/{final_filename}" if success else None
-
-        # Save Bubbles Metadata for Editing (Day 15)
+        
+        # Guardar metadatos en JSON para futura edición (Day 15)
         import json
         json_filename = f"metadata_{unique_filename}.json"
         json_path = os.path.join(UPLOAD_DIR, json_filename)
         with open(json_path, "w", encoding="utf-8") as f:
-            # Convertir numpy types a serializables si quedan
-            # Simple hack: json.dumps con default str
             json.dump(bubbles, f, default=str, ensure_ascii=False)
 
-        return {
-            "status": "success",
-            "id": unique_filename, # ID for Editing
+        # 6. Update Job Complete
+        result_data = {
+            "id": unique_filename,
+            "filename": unique_filename,
             "original_url": f"/uploads/{unique_filename}",
+            "final_url": final_url_val,
             "debug_url": f"/uploads/{debug_filename}",
-            # "clean_url" apunta ahora a la Opcion B (Texto) por defecto
             "clean_url": f"/uploads/{clean_text_filename}",
             "clean_bubble_url": f"/uploads/{clean_bubble_filename}" if clean_bubble_filename else None,
-            "final_url": final_url_val,
             "bubbles_count": len(bubbles),
             "bubbles_data": bubbles
         }
-
+        
+        job_manager.update_job(job_id, status="completed", progress=100, step="¡Completado!", result=result_data)
         
     except Exception as e:
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"AI Processing failed: {str(e)}")
+        job_manager.update_job(job_id, status="failed", error=str(e), step="Error Interno")
 
-from pydantic import BaseModel
+@app.post("/process")
+async def process_comic(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    # 1. Validar y Guardar imagen
+    if file.content_type and not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File is not an image")
+    
+    file_extension = file.filename.split(".")[-1] if "." in file.filename else "jpg"
+    unique_filename = f"{uuid.uuid4()}.{file_extension}"
+    file_path = os.path.join(UPLOAD_DIR, unique_filename)
+    
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
+    # 2. Crear Job y Encolar
+    job_id = job_manager.create_job()
+    background_tasks.add_task(process_comic_task, job_id, file_path, unique_filename)
+    
+    return {"job_id": job_id, "status": "queued"}
+
+@app.get("/jobs/{job_id}")
+async def get_job_status(job_id: str):
+    job = job_manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+# --- EDITING ENDPOINTS ---
 class UpdateBubbleRequest(BaseModel):
     bubble_index: int
     new_text: str
@@ -316,12 +304,11 @@ async def update_bubble(filename: str, request: UpdateBubbleRequest):
             json.dump(bubbles, f, default=str, ensure_ascii=False)
 
         # 3. Regenerar Imagen (Text Rendering)
-        # Usamos la imagen CLEAN (clean_text_{filename}) como base
         clean_text_filename = f"clean_text_{filename}"
         clean_text_path = os.path.join(UPLOAD_DIR, clean_text_filename)
         
         if not os.path.exists(clean_text_path):
-             # Intentar fallback si no existe
+             # Intentar fallback
              clean_text_path = os.path.join(UPLOAD_DIR, f"clean_text_{filename}.jpg")
              if not os.path.exists(clean_text_path):
                  raise HTTPException(status_code=404, detail="Clean image source not found")
@@ -335,17 +322,9 @@ async def update_bubble(filename: str, request: UpdateBubbleRequest):
 
         # Renderizar
         renderer = TextRenderer()
-        # Nota: render_text devuelve imagen PIL si no se pasa output_path?
-        # Revisando renderer.py: render_text(self, image, bubbles, output_path=None) -> returns success (bool) OR image (PIL) if output_path is None?
-        # Wait, I need to check renderer.py signature.
-        # Assuming I modify renderer to support returning PIL.
-        # Current renderer.py writes to file if path provided.
-        # Let's fix renderer usage below.
-        
         final_filename = f"final_{filename}.jpg"
         final_path = os.path.join(UPLOAD_DIR, final_filename)
         
-        # Calling renderer
         renderer.render_text(clean_img_pil, bubbles, final_path)
         
         return {
@@ -395,7 +374,6 @@ async def update_all_fonts(filename: str, request: UpdateAllFontsRequest):
         clean_text_path = os.path.join(UPLOAD_DIR, clean_text_filename)
         
         if not os.path.exists(clean_text_path):
-             # Intentar fallback si no existe
              clean_text_path = os.path.join(UPLOAD_DIR, f"clean_text_{filename}.jpg")
              if not os.path.exists(clean_text_path):
                  raise HTTPException(status_code=404, detail="Clean image source not found")
@@ -405,7 +383,6 @@ async def update_all_fonts(filename: str, request: UpdateAllFontsRequest):
         final_filename = f"final_{filename}.jpg"
         final_path = os.path.join(UPLOAD_DIR, final_filename)
         
-        # renderer ahora acepta path str directamente
         renderer.render_text(clean_text_path, bubbles, final_path)
         
         return {
