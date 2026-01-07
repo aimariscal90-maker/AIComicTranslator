@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Dropzone from "@/components/Dropzone";
 import ImagePreview from "@/components/ImagePreview";
+import EditModal from "@/app/components/EditModal";
 
 interface UploadResponse {
   filename: string;
@@ -12,6 +13,7 @@ interface UploadResponse {
 
 interface ApiResponse {
   status: string;
+  id: string; // Needed for update
   original_url: string;
   debug_url: string;
   clean_url?: string;
@@ -26,28 +28,27 @@ interface ApiResponse {
     text?: string;
     translation?: string;
     translation_provider?: string;
+    font?: string; // Edit support
   }>;
 }
 
 export default function Home() {
-  // ... (state vars remain same)
-  // ... (handleFileSelected remains same)
-
-  // ... (render logic)
-
-
   const [isUploading, setIsUploading] = useState(false);
   const [localPreview, setLocalPreview] = useState<string | null>(null);
   const [serverImage, setServerImage] = useState<string | null>(null);
   const [apiResponse, setApiResponse] = useState<ApiResponse | null>(null);
-  const [inpaintingMode, setInpaintingMode] = useState<'bubble' | 'text'>('bubble');
+
+  // Interactive Editing State
+  const [editingBubble, setEditingBubble] = useState<{ index: number; text: string; font?: string } | null>(null);
+  const [imgDims, setImgDims] = useState<{ w: number; h: number } | null>(null);
 
   const handleFileSelected = async (file: File) => {
     // 1. Mostrar preview local inmediato
     const objectUrl = URL.createObjectURL(file);
     setLocalPreview(objectUrl);
-    setServerImage(null); // Reset server image
+    setServerImage(null);
     setApiResponse(null);
+    setImgDims(null);
     setIsUploading(true);
 
     try {
@@ -68,14 +69,11 @@ export default function Home() {
       setApiResponse(data);
 
       // 3. Mostrar imagen procesada (Debug con cajas)
-      // La API devuelve: original_url, debug_url, clean_url
       if (data.debug_url) {
         const fullUrl = `http://localhost:8000${data.debug_url}`;
         setServerImage(fullUrl);
-        console.log("Process success. Bubbles:", data.bubbles_count, data);
       } else {
-        // Fallback por si acaso
-        const fullUrl = `http://localhost:8000${data.original_url || (data as any).url}`;
+        const fullUrl = `http://localhost:8000${data.original_url}`;
         setServerImage(fullUrl);
       }
 
@@ -158,25 +156,111 @@ export default function Home() {
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-sm font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded">PASO 3 (FINAL)</span>
-                        <h3 className="text-sm font-bold text-gray-700">🎨 Resultado Final (Español)</h3>
+                        <h3 className="text-sm font-bold text-gray-700">🎨 Resultado Final (Español) - Click para Editar</h3>
                       </div>
-                      <div className="border-2 border-green-500 rounded-lg overflow-hidden relative shadow-lg transform hover:scale-[1.02] transition-transform">
+
+                      <div className="relative inline-block w-full border-2 border-green-500 rounded-lg overflow-hidden shadow-lg">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={`http://localhost:8000${apiResponse.final_url}`}
                           alt="Final Image"
-                          className="w-full h-auto"
+                          className="w-full h-auto block"
+                          onLoad={(e) => {
+                            setImgDims({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight });
+                          }}
                         />
-                        <div className="absolute bottom-2 right-2 flex gap-2">
+
+                        {/* OVERLAY DIVS FOR INTERACTION */}
+                        {imgDims && apiResponse.bubbles_data.map((bubble, idx) => {
+                          const [x1, y1, x2, y2] = bubble.bbox;
+                          const width = x2 - x1;
+                          const height = y2 - y1;
+
+                          // Calculate % positions
+                          const left = (x1 / imgDims.w) * 100;
+                          const top = (y1 / imgDims.h) * 100;
+                          const wPct = (width / imgDims.w) * 100;
+                          const hPct = (height / imgDims.h) * 100;
+
+                          return (
+                            <div
+                              key={idx}
+                              onClick={() => setEditingBubble({ index: idx, text: bubble.translation || "", font: bubble.font || "ComicNeue" })}
+                              className="absolute border-2 border-transparent hover:border-blue-500 hover:bg-blue-500/10 cursor-pointer transition-all z-10 group"
+                              style={{
+                                left: `${left}%`,
+                                top: `${top}%`,
+                                width: `${wPct}%`,
+                                height: `${hPct}%`,
+                              }}
+                              title="Clic para editar"
+                            >
+                              {/* Tooltip on hover */}
+                              <div className="hidden group-hover:block absolute -top-8 left-1/2 -translate-x-1/2 bg-black/75 text-white text-xs px-2 py-1 rounded whitespace-nowrap pointer-events-none">
+                                ✎ Editar
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        <div className="absolute bottom-2 right-2 flex gap-2 z-20 pointer-events-none">
                           <a
                             href={`http://localhost:8000${apiResponse.final_url}`}
                             download
-                            className="bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-1.5 rounded-full font-bold shadow-md transition-colors"
+                            className="bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-1.5 rounded-full font-bold shadow-md transition-colors pointer-events-auto"
                           >
                             ⬇ Descargar
                           </a>
                         </div>
                       </div>
+
+                      {/* Global Font Control */}
+                      <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-gray-700">Cambiar Fuente Global:</span>
+                          <select
+                            className="p-2 border border-gray-300 rounded text-sm bg-white text-gray-900 font-medium focus:ring-2 focus:ring-blue-500 outline-none"
+                            onChange={async (e) => {
+                              if (!apiResponse || !confirm("¿Aplicar esta fuente a TODOS los bocadillos?")) return;
+
+                              const newFont = e.target.value;
+                              try {
+                                const response = await fetch(`http://localhost:8000/process/${apiResponse.id}/update-all-fonts`, {
+                                  method: "PATCH",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ font: newFont })
+                                });
+
+                                if (!response.ok) throw new Error("Bulk Update failed");
+
+                                const data = await response.json();
+                                const timestamp = new Date().getTime();
+                                const newFinalUrl = `${data.final_url}?t=${timestamp}`;
+
+                                setApiResponse(prev => {
+                                  if (!prev) return null;
+                                  // Updates all bubbles in local state too
+                                  const newBubbles = prev.bubbles_data.map(b => ({ ...b, font: newFont }));
+                                  return {
+                                    ...prev,
+                                    final_url: newFinalUrl,
+                                    bubbles_data: newBubbles
+                                  };
+                                });
+                              } catch (error) {
+                                console.error(error);
+                                alert("Error al actualizar fuentes");
+                              }
+                            }}
+                          >
+                            <option value="">Seleccionar...</option>
+                            <option value="ComicNeue">Comic Neue</option>
+                            <option value="AnimeAce">Anime Ace</option>
+                            <option value="WildWords">Wild Words</option>
+                          </select>
+                        </div>
+                      </div>
+
                     </div>
                   )}
                 </div>
@@ -191,7 +275,7 @@ export default function Home() {
                   </div>
                   <div className="max-h-[400px] overflow-y-auto p-4 space-y-4">
                     {apiResponse?.bubbles_data?.map((bubble, idx) => (
-                      <div key={idx} className="bg-gray-50 p-3 rounded border-l-4 border-indigo-500 text-sm shadow-sm">
+                      <div key={idx} className="bg-gray-50 p-3 rounded border-l-4 border-indigo-500 text-sm shadow-sm hover:bg-indigo-50 cursor-pointer" onClick={() => setEditingBubble({ index: idx, text: bubble.translation || "", font: bubble.font || "ComicNeue" })}>
                         <div className="flex justify-between text-xs text-gray-500 mb-2">
                           <span className="font-mono font-bold">Bubble #{idx + 1}</span>
                           <span>Conf: {(bubble.confidence * 100).toFixed(1)}%</span>
@@ -230,7 +314,7 @@ export default function Home() {
                 </div>
 
                 <div className="p-2 bg-green-50 text-green-700 text-sm rounded border border-green-200">
-                  Procesamiento completo.
+                  Procesamiento completo. Haz clic en la imagen para editar.
                 </div>
               </div>
             ) : (
@@ -241,7 +325,57 @@ export default function Home() {
           </div>
         </section>
       </div>
+
+      <EditModal
+        isOpen={!!editingBubble}
+        onClose={() => setEditingBubble(null)}
+        initialText={editingBubble?.text || ""}
+        initialFont={editingBubble?.font || "ComicNeue"}
+        onSave={async (newText, newFont) => {
+          if (!editingBubble || !apiResponse) return;
+
+          try {
+            const response = await fetch(`http://localhost:8000/process/${apiResponse.id}/update-bubble`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                bubble_index: editingBubble.index,
+                new_text: newText,
+                font: newFont
+              })
+            });
+
+            if (!response.ok) throw new Error("Update failed");
+
+            const data = await response.json();
+
+            // Force re-render with new URL (Timestamp hash)
+            const timestamp = new Date().getTime();
+            const newFinalUrl = `${data.final_url}?t=${timestamp}`;
+
+            setApiResponse(prev => {
+              if (!prev) return null;
+              const newBubbles = [...prev.bubbles_data];
+              newBubbles[editingBubble.index] = {
+                ...newBubbles[editingBubble.index],
+                translation: newText,
+                font: newFont
+              };
+              return {
+                ...prev,
+                final_url: newFinalUrl,
+                bubbles_data: newBubbles
+              };
+            });
+
+            setEditingBubble(null);
+
+          } catch (e) {
+            console.error(e);
+            alert("Error al actualizar");
+          }
+        }}
+      />
     </main>
   );
 }
-

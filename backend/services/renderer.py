@@ -2,19 +2,28 @@ import os
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import textwrap
 import numpy as np
+from contextlib import contextmanager
 
 class TextRenderer:
     def __init__(self, font_path=None):
         # Por ahora usamos una fuente por defecto del sistema o una de Pillow si no hay una especifica
         self.font_path = font_path # "arial.ttf" por ejemplo si estuviera disponible
 
+    @contextmanager
+    def _get_image_context(self, image_source):
+        if isinstance(image_source, str):
+            with Image.open(image_source) as img:
+                yield img.convert("RGBA")
+        else:
+            yield image_source.convert("RGBA")
+
     def render_text(self, image_path, bubbles, output_path):
         """
         Dibuja el texto traducido sobre la imagen limpia.
         """
         try:
-            # Abrir imagen
-            with Image.open(image_path).convert("RGBA") as img:
+            # Abrir imagen (Soporte para str path o objeto PIL Image)
+            with self._get_image_context(image_path) as img:
                 draw = ImageDraw.Draw(img)
                 
                 # Canvas para textos (para medir)
@@ -70,11 +79,14 @@ class TextRenderer:
                         max_w_px = w - 6 
                         max_h_px = h - 6
                     else:
-                        # Para óvalos: Margen del 10% para curvatura
+                    # Para óvalos: Margen del 10% para curvatura
                         padding_ratio = 0.1 
                         max_w_px = w * (1.0 - padding_ratio * 2) 
                         max_h_px = h * (1.0 - padding_ratio * 2)
                     
+                    # Obtener fuente deseada por el usuario (o Default)
+                    font_name = bubble.get('font', 'ComicNeue')
+
                     font_size = int(h / 3) # Empezar optimista
                     min_font_size = 8
                     
@@ -85,7 +97,7 @@ class TextRenderer:
                     # Bucle de reducción de fuente
                     # Day 13 Refined: Shape-Aware Wrapping
                     while font_size >= min_font_size:
-                        font = self._load_font(font_size)
+                        font = self._load_font(font_size, font_name)
                         
                         if is_rectangle:
                              # Estrategia Rectangular
@@ -98,7 +110,10 @@ class TextRenderer:
                              
                              if total_text_height <= max_h_px:
                                  # SI CABE
-                                 pass 
+                                 final_wrapped_lines = wrapped_lines
+                                 final_font = font
+                                 final_line_heights = line_heights
+                                 break
                              else:
                                  wrapped_lines = [] # Fallo
                         else:
@@ -119,11 +134,14 @@ class TextRenderer:
                     # Fallback si no cabe ni con min_size (usamos wrapping rectangular clásico a fuerza bruta)
                     if not final_wrapped_lines:
                         font_size = min_font_size
-                        final_font = self._load_font(font_size)
+                        final_font = self._load_font(font_size, font_name)
                         # Wrapping rectangular forzoso
                         max_w_fallback = w * 0.8
                         final_wrapped_lines = self._wrap_text_pixels(text_content, final_font, max_w_fallback, draw_txt)
                         final_line_heights = [draw_txt.textbbox((0, 0), line, font=final_font)[3] - draw_txt.textbbox((0, 0), line, font=final_font)[1] for line in final_wrapped_lines]
+                        
+                        # Fix for logic below needing real_max_w to be initialized
+                        # Note: The original code logic proceeds to drawing. Need to ensure loops logic matches.
 
                     # --- DIBUJAR ---
                     leading = int(font_size * 0.2)
@@ -340,14 +358,37 @@ class TextRenderer:
         # Si salimos del bucle es que no se encontró configuración válida
         return []
 
-    def _load_font(self, size):
-        # Prioridad: Fuente Comic descargada
+    def _load_font(self, size, font_name="ComicNeue"):
+        """
+        Carga una fuente desde la carpeta backend/fonts.
+        Mapping de nombres:
+        - "ComicNeue" -> "ComicNeue-Bold.ttf" (Default)
+        - "AnimeAce" -> "animeace.ttf"
+        - "WildWords" -> "wildwords.ttf"
+        """
+        fonts_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "fonts")
+        
+        # Mapa de Archivos
+        font_files = {
+            "ComicNeue": "ComicNeue-Bold.ttf",
+            "AnimeAce": "animeace.ttf",
+            "WildWords": "CCWildWords-Roman.ttf"
+        }
+        
+        target_file = font_files.get(font_name, "ComicNeue-Bold.ttf")
+        full_path = os.path.join(fonts_dir, target_file)
+
+        # Prioridad: Fuente solicitada
         try:
-            return ImageFont.truetype("comic.ttf", size)
+            return ImageFont.truetype(full_path, size)
         except:
-            # Fallback a Arial
+            # Fallback 1: Intentar ComicNeue si falló la otra
             try:
-                return ImageFont.truetype("arial.ttf", size)
+                fallback_path = os.path.join(fonts_dir, "ComicNeue-Bold.ttf")
+                return ImageFont.truetype(fallback_path, size)
             except:
-                # Fallback final
-                return ImageFont.load_default()
+                # Fallback final a Arial o Default
+                try:
+                    return ImageFont.truetype("arial.ttf", size)
+                except:
+                    return ImageFont.load_default()

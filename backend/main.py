@@ -249,8 +249,18 @@ async def process_comic(file: UploadFile = File(...)):
         
         final_url_val = f"/uploads/{final_filename}" if success else None
 
+        # Save Bubbles Metadata for Editing (Day 15)
+        import json
+        json_filename = f"metadata_{unique_filename}.json"
+        json_path = os.path.join(UPLOAD_DIR, json_filename)
+        with open(json_path, "w", encoding="utf-8") as f:
+            # Convertir numpy types a serializables si quedan
+            # Simple hack: json.dumps con default str
+            json.dump(bubbles, f, default=str, ensure_ascii=False)
+
         return {
             "status": "success",
+            "id": unique_filename, # ID for Editing
             "original_url": f"/uploads/{unique_filename}",
             "debug_url": f"/uploads/{debug_filename}",
             # "clean_url" apunta ahora a la Opcion B (Texto) por defecto
@@ -260,8 +270,151 @@ async def process_comic(file: UploadFile = File(...)):
             "bubbles_count": len(bubbles),
             "bubbles_data": bubbles
         }
+
         
     except Exception as e:
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"AI Processing failed: {str(e)}")
+
+from pydantic import BaseModel
+
+class UpdateBubbleRequest(BaseModel):
+    bubble_index: int
+    new_text: str
+    font: str = "ComicNeue"
+
+@app.patch("/process/{filename}/update-bubble")
+async def update_bubble(filename: str, request: UpdateBubbleRequest):
+    """
+    Actualiza el texto/fuente de un bocadillo específico y regenera la imagen.
+    """
+    try:
+        import json
+        import cv2
+        import numpy as np
+        from PIL import Image
+        from services.renderer import TextRenderer
+
+        # 1. Cargar metadatos
+        json_path = os.path.join(UPLOAD_DIR, f"metadata_{filename}.json")
+        if not os.path.exists(json_path):
+            raise HTTPException(status_code=404, detail="Metadata not found")
+        
+        with open(json_path, "r", encoding="utf-8") as f:
+            bubbles = json.load(f)
+
+        if request.bubble_index < 0 or request.bubble_index >= len(bubbles):
+            raise HTTPException(status_code=400, detail="Invalid bubble index")
+
+        # 2. Actualizar datos
+        bubbles[request.bubble_index]['translation'] = request.new_text
+        bubbles[request.bubble_index]['font'] = request.font # Guardamos la fuente
+        
+        # Guardar cambios
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(bubbles, f, default=str, ensure_ascii=False)
+
+        # 3. Regenerar Imagen (Text Rendering)
+        # Usamos la imagen CLEAN (clean_text_{filename}) como base
+        clean_text_filename = f"clean_text_{filename}"
+        clean_text_path = os.path.join(UPLOAD_DIR, clean_text_filename)
+        
+        if not os.path.exists(clean_text_path):
+             # Intentar fallback si no existe
+             clean_text_path = os.path.join(UPLOAD_DIR, f"clean_text_{filename}.jpg")
+             if not os.path.exists(clean_text_path):
+                 raise HTTPException(status_code=404, detail="Clean image source not found")
+
+        # Cargar imagen limpia (Clean Image)
+        clean_img_cv = cv2.imread(clean_text_path)
+        if clean_img_cv is None:
+             raise HTTPException(status_code=500, detail="Failed to load clean image")
+
+        clean_img_pil = Image.fromarray(cv2.cvtColor(clean_img_cv, cv2.COLOR_BGR2RGB))
+
+        # Renderizar
+        renderer = TextRenderer()
+        # Nota: render_text devuelve imagen PIL si no se pasa output_path?
+        # Revisando renderer.py: render_text(self, image, bubbles, output_path=None) -> returns success (bool) OR image (PIL) if output_path is None?
+        # Wait, I need to check renderer.py signature.
+        # Assuming I modify renderer to support returning PIL.
+        # Current renderer.py writes to file if path provided.
+        # Let's fix renderer usage below.
+        
+        final_filename = f"final_{filename}.jpg"
+        final_path = os.path.join(UPLOAD_DIR, final_filename)
+        
+        # Calling renderer
+        renderer.render_text(clean_img_pil, bubbles, final_path)
+        
+        return {
+            "status": "updated",
+            "final_url": f"/uploads/{final_filename}",
+            "bubbles_data": bubbles
+        }
+            
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Update failed: {str(e)}")
+
+class UpdateAllFontsRequest(BaseModel):
+    font: str
+
+@app.patch("/process/{filename}/update-all-fonts")
+async def update_all_fonts(filename: str, request: UpdateAllFontsRequest):
+    """
+    Actualiza la fuente de TODOS los bocadillos y regenera la imagen.
+    """
+    try:
+        import json
+        import cv2
+        import numpy as np
+        from PIL import Image
+        from services.renderer import TextRenderer
+
+        # 1. Cargar metadatos
+        json_path = os.path.join(UPLOAD_DIR, f"metadata_{filename}.json")
+        if not os.path.exists(json_path):
+            raise HTTPException(status_code=404, detail="Metadata not found")
+        
+        with open(json_path, "r", encoding="utf-8") as f:
+            bubbles = json.load(f)
+
+        # 2. Actualizar datos (Bulk Update)
+        for bubble in bubbles:
+            bubble['font'] = request.font
+        
+        # Guardar cambios
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(bubbles, f, default=str, ensure_ascii=False)
+
+        # 3. Regenerar Imagen (Text Rendering)
+        clean_text_filename = f"clean_text_{filename}"
+        clean_text_path = os.path.join(UPLOAD_DIR, clean_text_filename)
+        
+        if not os.path.exists(clean_text_path):
+             # Intentar fallback si no existe
+             clean_text_path = os.path.join(UPLOAD_DIR, f"clean_text_{filename}.jpg")
+             if not os.path.exists(clean_text_path):
+                 raise HTTPException(status_code=404, detail="Clean image source not found")
+
+        # Renderizar
+        renderer = TextRenderer()
+        final_filename = f"final_{filename}.jpg"
+        final_path = os.path.join(UPLOAD_DIR, final_filename)
+        
+        # renderer ahora acepta path str directamente
+        renderer.render_text(clean_text_path, bubbles, final_path)
+        
+        return {
+            "status": "updated_all",
+            "final_url": f"/uploads/{final_filename}",
+            "bubbles_data": bubbles
+        }
+            
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Bulk Update failed: {str(e)}")
