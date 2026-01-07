@@ -2,7 +2,7 @@ import shutil
 import uuid
 import os
 import zipfile
-from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Depends
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Depends, Form
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -290,10 +290,17 @@ class ProcessRequest(BaseModel):
     project_id: Optional[str] = None
 
 @app.post("/process")
-async def process_comic(background_tasks: BackgroundTasks, file: UploadFile = File(...), project_id: Optional[str] = None):
+async def process_comic(
+    background_tasks: BackgroundTasks, 
+    file: UploadFile = File(...), 
+    project_id: Optional[str] = Form(None)
+):
     # 1. Validar y Guardar imagen
     if file.content_type and not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File is not an image")
+    
+    # Debug log
+    print(f"[DEBUG] Received project_id: {project_id}")
     
     file_extension = file.filename.split(".")[-1] if "." in file.filename else "jpg"
     unique_filename = f"{uuid.uuid4()}.{file_extension}"
