@@ -535,7 +535,8 @@ def list_projects(db: Session = Depends(get_db)):
     """
     Listar todos los proyectos ordenados por fecha de creación.
     """
-    projects = db.query(Project).order_by(Project.created_at.desc()).all()
+    from sqlalchemy.orm import joinedload
+    projects = db.query(Project).options(joinedload(Project.pages)).order_by(Project.created_at.desc()).all()
     return projects
 
 @app.get("/projects/{project_id}")
