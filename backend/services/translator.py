@@ -175,25 +175,32 @@ Just the pure translations."""
             # Formatear textos con números
             texts_formatted = "\n".join([f"{i+1}. {text[:50]}" for i, text in enumerate(texts_list) if text.strip()])
             
-            # Prompt de clasificación
-            prompt = f"""Classify each comic bubble text into ONE category:
+            # Prompt de clasificación mejorado (Day 25 v2)
+            prompt = f"""You are a comic book expert. Classify each text into EXACTLY ONE category.
 
-Categories:
-- speech: Normal dialogue between characters
-- thought: Internal thoughts (often in cloud bubbles)
-- shout: Yelling, emphasis, strong emotions
-- narration: Narrator text (usually in rectangular boxes)
-- sfx: Sound effects or onomatopoeia (BOOM, SPLASH, etc.)
+IMPORTANT RULES:
+1. SFX: ONLY if it's a sound effect/onomatopoeia (BOOM, SPLASH, BANG, CRACK, whoosh, zzz)
+2. NARRATION: ONLY if it's clearly narrator text (starts with "Meanwhile", "Later", "The next day", or describes scene)
+3. SHOUT: ONLY if ALL CAPS and expressing strong emotion (not just emphasis)
+4. THOUGHT: ONLY if clearly internal monologue (uses "I think", "I wonder", "Maybe I should")
+5. SPEECH: Everything else (default for dialogue)
+
+WHEN IN DOUBT → use "speech"
+
+Examples:
+- "BOOM" → sfx
+- "Hello there" → speech
+- "WHAT?!" → shout
+- "Meanwhile, in the city..." → narration
+- "I think I should go" → thought
+- "You're late!" → speech
+- "AAAHHH!" → shout
+- "Splash" → sfx
 
 Texts to classify:
 {texts_formatted}
 
-Respond ONLY with the categories, one per line, in the SAME ORDER.
-Use ONLY these words: speech, thought, shout, narration, sfx
-Example response:
-speech
-sfx
-thought"""
+Respond with ONLY the category names, one per line:"""
 
             response = self.model.generate_content(prompt)
             classifications_text = response.text.strip()
