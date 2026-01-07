@@ -7,6 +7,10 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from typing import Optional, List
+from sqlalchemy.orm import Session
+from database import get_db
+from models import Project, Page, Bubble
 from services.queue_manager import JobManager
 
 app = FastAPI(title="AI Comic Translator API", version="0.1.0")
@@ -428,6 +432,65 @@ async def download_project_zip(filename: str):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
 
+# --- PROJECT MANAGEMENT ENDPOINTS (DAY 22) ---
+class CreateProjectRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+@app.post("/projects")
+def create_project(request: CreateProjectRequest, db: Session = Depends(get_db)):
+    """
+    Crear un nuevo proyecto (serie/capítulo de cómic).
+    """
+    project = Project(
+        name=request.name,
+        description=request.description
+    )
+    db.add(project)
+    db.commit()
+    db.refresh(project)
+    return project
+
+@app.get("/projects")
+def list_projects(db: Session = Depends(get_db)):
+    """
+    Listar todos los proyectos ordenados por fecha de creación.
+    """
+    projects = db.query(Project).order_by(Project.created_at.desc()).all()
+    return projects
+
+@app.get("/projects/{project_id}")
+def get_project(project_id: str, db: Session = Depends(get_db)):
+    """
+    Obtener detalles de un proyecto específico con sus páginas.
+    """
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return project
+
+@app.get("/projects/{project_id}/pages")
+def get_project_pages(project_id: str, db: Session = Depends(get_db)):
+    """
+    Obtener todas las páginas de un proyecto.
+    """
+    pages = db.query(Page).filter(Page.project_id == project_id).order_by(Page.page_number).all()
+    return pages
+
+@app.delete("/projects/{project_id}")
+def delete_project(project_id: str, db: Session = Depends(get_db)):
+    """
+    Eliminar un proyecto (cascade eliminará páginas y bocadillos).
+    """
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    db.delete(project)
+    db.commit()
+    return {"status": "deleted", "project_id": project_id}
+
+# --- DOWNLOAD ENDPOINTS ---
 @app.get("/process/{filename}/download-final")
 async def download_final_image(filename: str):
     """

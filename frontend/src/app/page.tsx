@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import Dropzone from "@/components/Dropzone";
 import ImagePreview from "@/components/ImagePreview";
 import EditModal from "@/app/components/EditModal";
@@ -143,12 +144,25 @@ export default function Home() {
       <div className="max-w-6xl mx-auto space-y-8">
         {/* Header */}
         <header className="text-center space-y-2">
-          <h1 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600">
-            AI Comic Translator
-          </h1>
-          <p className="text-gray-600">
-            Laboratorio de Traducción Automatizada
-          </p>
+          <div className="flex justify-between items-center mb-4">
+            <div className="flex-1"></div>
+            <div className="flex-1">
+              <h1 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600">
+                AI Comic Translator
+              </h1>
+              <p className="text-gray-600">
+                Laboratorio de Traducción Automatizada
+              </p>
+            </div>
+            <div className="flex-1 flex justify-end">
+              <Link
+                href="/dashboard"
+                className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold transition-colors shadow-md"
+              >
+                📁 Proyectos
+              </Link>
+            </div>
+          </div>
         </header>
 
         {/* Upload Section */}
