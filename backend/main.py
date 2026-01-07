@@ -244,10 +244,13 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
                 db.commit()
                 db.refresh(page)
                 
+                # Save ID before closing session
+                page_id = page.id
+                
                 # Crear registros Bubble
                 for bubble_data in bubbles:
                     bubble = Bubble(
-                        page_id=page.id,
+                        page_id=page_id,
                         bbox=bubble_data['bbox'],
                         original_text=bubble_data.get('text', ''),
                         translated_text=bubble_data.get('translation', ''),
@@ -260,7 +263,7 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
                 db.commit()
                 db.close()
                 
-                print(f"[DB] Page saved: {page.id} with {len(bubbles)} bubbles")
+                print(f"[DB] Page saved: {page_id} with {len(bubbles)} bubbles")
             except Exception as db_error:
                 print(f"[DB ERROR] Failed to save to database: {db_error}")
                 import traceback
