@@ -11,3 +11,5 @@ deep-translator
 python-dotenv
 google-generativeai
 Pillow
+sqlalchemy
+alembic
