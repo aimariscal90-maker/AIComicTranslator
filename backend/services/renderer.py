@@ -39,10 +39,41 @@ class TextRenderer:
                         continue
 
                     # --- ESTRATEGIA DE AJUSTE DE TEXTO (Pixel-Perfect) ---
-                    # 1. Definir margenes de seguridad (para parches redondeados)
-                    padding_ratio = 0.1 # 10% de margen a cada lado
-                    max_w_px = w * (1.0 - padding_ratio * 2) 
-                    max_h_px = h * (1.0 - padding_ratio * 2)
+                    
+                    # 1. Detectar forma primero (para saber márgenes)
+                    polygon = bubble.get('polygon', [])
+                    is_rectangle = False
+                    if polygon and len(polygon) > 2:
+                        try:
+                            poly_points = [(p[0], p[1]) for p in polygon]
+                            
+                            # Shoelace formula simple
+                            x_coords = [p[0] for p in poly_points]
+                            y_coords = [p[1] for p in poly_points]
+                            area_poly = 0.5 * np.abs(np.dot(x_coords, np.roll(y_coords, 1)) - np.dot(y_coords, np.roll(x_coords, 1)))
+                            area_bbox = w * h
+                            
+                            if area_bbox > 0:
+                                ratio = area_poly / area_bbox
+                                if ratio > 0.80: 
+                                    is_rectangle = True
+                        except Exception as e:
+                            pass 
+
+                    # 2. Definir margenes según forma
+                    if is_rectangle:
+                        # Para cuadrados: MÁXIMO espacio posible.
+                        # Margen mínimo de 1-2px para no tocar el borde exacto
+                        # Y restamos el padding del parche que se suma luego (patch_padding=2)
+                        # Ancho Texto = Ancho Caja - (2 * patch_padding) - (2 * safety_margin)
+                        # Digamos safety=1px. Total resta = 4px + 2px = 6px
+                        max_w_px = w - 6 
+                        max_h_px = h - 6
+                    else:
+                        # Para óvalos: Margen del 10% para curvatura
+                        padding_ratio = 0.1 
+                        max_w_px = w * (1.0 - padding_ratio * 2) 
+                        max_h_px = h * (1.0 - padding_ratio * 2)
                     
                     font_size = int(h / 3) # Empezar optimista
                     min_font_size = 8
@@ -52,13 +83,27 @@ class TextRenderer:
                     final_line_heights = []
                     
                     # Bucle de reducción de fuente
-                    # Bucle de reducción de fuente
-                    # Day 13: Oval Wrapping Logic
+                    # Day 13 Refined: Shape-Aware Wrapping
                     while font_size >= min_font_size:
                         font = self._load_font(font_size)
                         
-                        # Intentar wrapear usando algoritmo de elipse/ovalo
-                        wrapped_lines = self._wrap_text_oval(text_content, font, w, h, draw_txt)
+                        if is_rectangle:
+                             # Estrategia Rectangular
+                             wrapped_lines = self._wrap_text_pixels(text_content, font, max_w_px, draw_txt)
+                             
+                             # Validar altura
+                             line_heights = [draw_txt.textbbox((0, 0), line, font=font)[3] - draw_txt.textbbox((0, 0), line, font=font)[1] for line in wrapped_lines]
+                             leading = int(font_size * 0.2)
+                             total_text_height = sum(line_heights) + (len(wrapped_lines) - 1) * leading
+                             
+                             if total_text_height <= max_h_px:
+                                 # SI CABE
+                                 pass 
+                             else:
+                                 wrapped_lines = [] # Fallo
+                        else:
+                             # Estrategia Oval (Bocadillos de diálogo)
+                             wrapped_lines = self._wrap_text_oval(text_content, font, w, h, draw_txt)
                         
                         if wrapped_lines:
                              # ÉXITO: El texto cabe en el óvalo con este tamaño de fuente
@@ -122,7 +167,12 @@ class TextRenderer:
                     
                     # Dibujar parche (Rounded Rectangle Solido sin Blur)
                     h_patch = bg_y2 - bg_y1
-                    radius = int(min(10, h_patch * 0.3))
+                    if is_rectangle:
+                        # Para cajas cuadradas, radio pequeño
+                        radius = 5
+                    else:
+                        # Para ovalos, radio grande para simular redondez
+                        radius = int(min(10, h_patch * 0.3))
                     
                     draw.rounded_rectangle([bg_x1, bg_y1, bg_x2, bg_y2], radius=radius, fill=bg_color_rgba)
 

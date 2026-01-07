@@ -140,7 +140,9 @@ class BubbleDetector:
             return []
 
         # Simplificar
-        epsilon = 0.01 * cv2.arcLength(candidate, True)
+        # Ajuste de sensibilidad (Day 13): 
+        # Bajamos epsilon de 0.01 a 0.002 para que NO recorte las esquinas de los cuadrados.
+        epsilon = 0.002 * cv2.arcLength(candidate, True)
         approx = cv2.approxPolyDP(candidate, epsilon, True)
         
         # Coordenadas Globales
