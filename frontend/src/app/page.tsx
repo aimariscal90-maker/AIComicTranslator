@@ -172,9 +172,10 @@ export default function Home() {
           </div>
         )}
 
-        {/* View Mode Toggle (Solo si hay resultado) */}
+        {/* View Mode Toggle & Downloads (Solo si hay resultado) */}
         {apiResponse?.final_url && !isUploading && (
-          <div className="flex justify-center">
+          <div className="flex flex-col items-center gap-4">
+            {/* View Toggles */}
             <div className="bg-white p-1 rounded-lg border shadow-sm inline-flex">
               <button
                 onClick={() => setViewMode("split")}
@@ -194,6 +195,24 @@ export default function Home() {
               >
                 👁️ Comparar
               </button>
+            </div>
+
+            {/* Export Buttons */}
+            <div className="flex gap-4">
+              <a
+                href={`http://localhost:8000${apiResponse.final_url}`}
+                download
+                className="flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg shadow-md font-bold transition-transform hover:-translate-y-0.5 active:translate-y-0"
+              >
+                📥 Descargar Imagen
+              </a>
+              <a
+                href={`http://localhost:8000/process/${apiResponse.id}/download-zip`}
+                download
+                className="flex items-center gap-2 px-5 py-2.5 bg-gray-800 hover:bg-gray-900 text-white rounded-lg shadow-md font-bold transition-transform hover:-translate-y-0.5 active:translate-y-0"
+              >
+                📦 Descargar ZIP
+              </a>
             </div>
           </div>
         )}

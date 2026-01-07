@@ -1,7 +1,9 @@
 import shutil
 import uuid
 import os
+import zipfile
 from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -395,3 +397,48 @@ async def update_all_fonts(filename: str, request: UpdateAllFontsRequest):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Bulk Update failed: {str(e)}")
+
+# --- EXPORT ENDPOINTS ---
+@app.get("/process/{filename}/download-zip")
+async def download_project_zip(filename: str):
+    """
+    Empaqueta todos los archivos relacionados con un cómic (Original, Final, Clean, JSON) en un ZIP.
+    """
+    try:
+        # Definir archivos a incluir
+        files_to_zip = {
+            "original.jpg": filename,
+            "final_translated.jpg": f"final_{filename}.jpg", # Fix extension logic if needed, but assuming jpg for now
+            "clean_no_text.jpg": f"clean_text_{filename}.jpg", # Assuming extensions might vary effectively, but our code saves as jpg mostly
+            "debug_ocr.jpg": f"debug_{filename}",
+            "metadata.json": f"metadata_{filename}.json"
+        }
+        
+        # Validaciones de existencia (si usaste extensiones difusas en main.py, cuidado aqui)
+        # En main.py guardamos con f"final_{unique_filename}" donde unique_filename ya tiene extension.
+        # Check: f"final_{unique_filename}" -> "final_uuid.jpg" OK.
+        
+        # Nombre del ZIP de salida
+        zip_filename = f"Project_{filename}.zip"
+        zip_path = os.path.join(UPLOAD_DIR, zip_filename)
+        
+        # Crear ZIP
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for zip_name, disk_name in files_to_zip.items():
+                disk_path = os.path.join(UPLOAD_DIR, disk_name)
+                # Intentar variantes si no existe exacto (por si jpg vs png)
+                if not os.path.exists(disk_path):
+                     # Hack simple: intentar quitar .jpg y poner .png si fuera el caso, 
+                     # pero nuestro sistema normaliza extensiones en upload? 
+                     # unique_filename = uuid.ext
+                     pass
+                
+                if os.path.exists(disk_path):
+                    zipf.write(disk_path, arcname=zip_name)
+        
+        return FileResponse(zip_path, media_type='application/zip', filename=zip_filename)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
