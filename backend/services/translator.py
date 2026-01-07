@@ -77,3 +77,80 @@ class TranslatorService:
         except Exception as e:
             print(f"Global Translation error: {e}")
             return text, "Error"
+
+    def translate_batch_with_context(self, texts_list):
+        """
+        Traduce una lista de textos manteniendo coherencia contextual.
+        
+        Input: ["Hello!", "How are you?", "Fine, thanks!"]
+        Output: ["¡Hola!", "¿Qué tal?", "¡Bien, gracias!"]
+        
+        Día 24: Traducción con contexto de página completa.
+        """
+        if not texts_list or not any(t.strip() for t in texts_list):
+            return [""] * len(texts_list), "None"
+        
+        if not self.model:
+            # Fallback a traducción individual si no hay modelo
+            print("Gemini not available, falling back to individual translation...")
+            results = [self.translate(text)[0] for text in texts_list]
+            return results, "Google Translate (Batch Fallback)"
+        
+        try:
+            # Formatear textos con números
+            texts_formatted = "\n".join([f"{i+1}. {text}" for i, text in enumerate(texts_list) if text.strip()])
+            
+            # Prompt contextual mejorado
+            prompt = f"""Act as a professional comic book translator specialized in manga/comics.
+
+Translate the following dialogues from English (or source language) to Spanish (Spain).
+
+IMPORTANT RULES:
+- Maintain CONSISTENT TONE between related dialogues (formal/informal)
+- Preserve slang, sarcasm, and humor
+- Keep character voice consistency
+- For sound effects (SFX/onomatopoeia like BOOM, SPLASH), prepend '[SFX]'
+- Be concise to fit speech bubbles
+- Translate naturally, not literally
+
+Dialogues to translate:
+{texts_formatted}
+
+Respond ONLY with the translations, one per line, in the SAME ORDER.
+Do NOT include line numbers, explanations, or extra text.
+Just the pure translations."""
+
+            response = self.model.generate_content(prompt)
+            translations_text = response.text.strip()
+            
+            # Parsear respuesta (limpiar números si los añadió)
+            lines = translations_text.split('\n')
+            translations = []
+            
+            for line in lines:
+                # Limpiar números al inicio (ej: "1. Hola" -> "Hola")
+                cleaned = line.strip()
+                if cleaned and cleaned[0].isdigit():
+                    # Quitar "1. " o "1) " o "1 - "
+                    parts = cleaned.split('. ', 1)
+                    if len(parts) > 1:
+                        cleaned = parts[1]
+                    else:
+                        parts = cleaned.split(') ', 1)
+                        if len(parts) > 1:
+                            cleaned = parts[1]
+                
+                translations.append(cleaned)
+            
+            # Asegurarse de que tenemos el mismo número de traducciones
+            while len(translations) < len(texts_list):
+                translations.append("")
+            
+            return translations[:len(texts_list)], "Gemini Flash (Contextual)"
+            
+        except Exception as e:
+            print(f"Batch translation error: {e}")
+            print("Falling back to individual translation...")
+            # Fallback a traducción individual
+            results = [self.translate(text)[0] for text in texts_list]
+            return results, "Gemini Flash (Individual Fallback)"

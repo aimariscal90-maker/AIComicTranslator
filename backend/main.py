@@ -92,15 +92,15 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
         job_manager.update_job(job_id, progress=40, step="Leyendo Texto (OCR) 📖")
         ocr_service = OCRService()
         
-        # 3. Traducción
-        job_manager.update_job(job_id, progress=50, step="Traduciendo (Gemini) 🤖")
+        # 3. Traducción (Day 24: Contextual Batch Translation)
+        job_manager.update_job(job_id, progress=50, step="Traduciendo (Gemini con Contexto) 🤖")
         translator = TranslatorService(target_lang='es')
         
         # Leer imagen para recortes
         img_cv = cv2.imread(file_path)
         
         # Procesar cada burbuja para extraer texto y traducir
-        print("Extracting and translating text...")
+        print("Extracting text and detecting colors...")
         for i, bubble in enumerate(bubbles):
             x1, y1, x2, y2 = map(int, bubble['bbox'])
             
@@ -182,18 +182,55 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
                         text_to_translate = text_to_translate.replace('- ', '') 
                         import re
                         text_to_translate = re.sub(' +', ' ', text_to_translate).strip()
-                        trans_text, trans_provider = translator.translate(text_to_translate)
-                        bubble['translation'] = trans_text
-                        bubble['translation_provider'] = trans_provider
+                        bubble['clean_text'] = text_to_translate  # Store for batch translation
                     else:
-                        bubble['translation'] = ""
-                        bubble['translation_provider'] = "None"
+                        bubble['clean_text'] = ""
             else:
                 bubble['text'] = ""
                 bubble['translation'] = ""
                 bubble['translation_provider'] = "None"
                 bubble['word_boxes'] = []
 
+        # DAY 24: Batch Contextual Translation
+        # Recopilar textos para traducción contextual
+        bubbles_with_text = [(i, b) for i, b in enumerate(bubbles) if b.get('clean_text', '').strip()]
+        
+        if bubbles_with_text:
+            texts_to_translate = [b['clean_text'] for _, b in bubbles_with_text]
+            
+            try:
+                print(f"[DAY 24] Translating {len(texts_to_translate)} texts with context...")
+                translations, provider = translator.translate_batch_with_context(texts_to_translate)
+                
+                # Asignar traducciones
+                for idx, (i, bubble) in enumerate(bubbles_with_text):
+                    if idx < len(translations):
+                        bubbles[i]['translation'] = translations[idx]
+                        bubbles[i]['translation_provider'] = provider
+                    else:
+                        bubbles[i]['translation'] = bubble['clean_text']
+                        bubbles[i]['translation_provider'] = "Error: Missing translation"
+                        
+                print(f"[DAY 24] Batch translation successful with {provider}")
+                
+            except Exception as e:
+                print(f"[ERROR] Batch translation failed: {e}")
+                # Fallback: traducir individualmente
+                for i, b in bubbles_with_text:
+                    try:
+                        trans, prov = translator.translate(b['clean_text'])
+                        bubbles[i]['translation'] = trans
+                        bubbles[i]['translation_provider'] = prov
+                    except:
+                        bubbles[i]['translation'] = b['clean_text']
+                        bubbles[i]['translation_provider'] = "Error"
+        
+        # Asegurar que todos los bubbles tienen translation
+        for bubble in bubbles:
+            if 'translation' not in bubble:
+                bubble['translation'] = ""
+                bubble['translation_provider'] = "None"
+        
         # 4. Inpainting
         job_manager.update_job(job_id, progress=70, step="Borrando Texto Original 🎨")
         
