@@ -175,7 +175,7 @@ Just the pure translations."""
             # Formatear textos con números
             texts_formatted = "\n".join([f"{i+1}. {text[:50]}" for i, text in enumerate(texts_list) if text.strip()])
             
-            # Prompt de clasificación mejorado (Day 25 v2)
+            # Prompt de clasificación mejorado (Day 25 v3 - More Examples)
             prompt = f"""You are a comic book expert. Classify each text into EXACTLY ONE category.
 
 IMPORTANT RULES:
@@ -188,14 +188,52 @@ IMPORTANT RULES:
 WHEN IN DOUBT → use "speech"
 
 Examples:
+
+SFX (sound effects):
 - "BOOM" → sfx
+- "SPLASH" → sfx  
+- "BANG!" → sfx
+- "Crack" → sfx
+- "whoosh" → sfx
+- "zzz..." → sfx
+- "CRASH!" → sfx
+- "BAM" → sfx
+- "POW!" → sfx
+- "Thud" → sfx
+
+SPEECH (normal dialogue):
 - "Hello there" → speech
-- "WHAT?!" → shout
-- "Meanwhile, in the city..." → narration
-- "I think I should go" → thought
 - "You're late!" → speech
+- "What happened?" → speech  
+- "I don't know" → speech
+- "Let's go" → speech
+- "Really?" → speech
+- "Come on!" → speech
+- "Wait for me" → speech
+- "That's amazing" → speech
+- "I agree" → speech
+
+SHOUT (all caps + emotion):
+- "WHAT?!" → shout
+- "NOOO!!" → shout
 - "AAAHHH!" → shout
-- "Splash" → sfx
+- "STOP!" → shout
+- "HELP!" → shout
+- "GET OUT!" → shout
+- "I WON'T LET YOU!" → shout
+
+NARRATION (narrator):
+- "Meanwhile, in the city..." → narration
+- "Later that day..." → narration
+- "The next morning..." → narration
+- "Back at headquarters..." → narration
+- "Two hours earlier..." → narration
+
+THOUGHT (internal):
+- "I think I should go" → thought
+- "Maybe I'm wrong..." → thought
+- "I wonder what happened" → thought
+- "What should I do?" → thought (if clearly internal)
 
 Texts to classify:
 {texts_formatted}
