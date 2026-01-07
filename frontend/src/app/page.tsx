@@ -200,7 +200,7 @@ export default function Home() {
             {/* Export Buttons */}
             <div className="flex gap-4">
               <a
-                href={`http://localhost:8000${apiResponse.final_url}`}
+                href={`http://localhost:8000/process/${apiResponse.id}/download-final`}
                 download
                 className="flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg shadow-md font-bold transition-transform hover:-translate-y-0.5 active:translate-y-0"
               >

@@ -402,37 +402,22 @@ async def update_all_fonts(filename: str, request: UpdateAllFontsRequest):
 @app.get("/process/{filename}/download-zip")
 async def download_project_zip(filename: str):
     """
-    Empaqueta todos los archivos relacionados con un cómic (Original, Final, Clean, JSON) en un ZIP.
+    Empaqueta SOLAMENTE la imagen final traducida en un ZIP (Solicitud del Usuario).
     """
     try:
-        # Definir archivos a incluir
+        # Definir archivos a incluir (Solo Final)
         files_to_zip = {
-            "original.jpg": filename,
-            "final_translated.jpg": f"final_{filename}.jpg", # Fix extension logic if needed, but assuming jpg for now
-            "clean_no_text.jpg": f"clean_text_{filename}.jpg", # Assuming extensions might vary effectively, but our code saves as jpg mostly
-            "debug_ocr.jpg": f"debug_{filename}",
-            "metadata.json": f"metadata_{filename}.json"
+            "Traduccion_Final.jpg": f"final_{filename}.jpg"
         }
         
-        # Validaciones de existencia (si usaste extensiones difusas en main.py, cuidado aqui)
-        # En main.py guardamos con f"final_{unique_filename}" donde unique_filename ya tiene extension.
-        # Check: f"final_{unique_filename}" -> "final_uuid.jpg" OK.
-        
         # Nombre del ZIP de salida
-        zip_filename = f"Project_{filename}.zip"
+        zip_filename = f"Comic_Translated_{filename}.zip"
         zip_path = os.path.join(UPLOAD_DIR, zip_filename)
         
         # Crear ZIP
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for zip_name, disk_name in files_to_zip.items():
                 disk_path = os.path.join(UPLOAD_DIR, disk_name)
-                # Intentar variantes si no existe exacto (por si jpg vs png)
-                if not os.path.exists(disk_path):
-                     # Hack simple: intentar quitar .jpg y poner .png si fuera el caso, 
-                     # pero nuestro sistema normaliza extensiones en upload? 
-                     # unique_filename = uuid.ext
-                     pass
-                
                 if os.path.exists(disk_path):
                     zipf.write(disk_path, arcname=zip_name)
         
@@ -442,3 +427,30 @@ async def download_project_zip(filename: str):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+
+@app.get("/process/{filename}/download-final")
+async def download_final_image(filename: str):
+    """
+    Descarga directa de la imagen final traducida (Forzando attachment).
+    """
+    try:
+        final_filename = f"final_{filename}.jpg"
+        file_path = os.path.join(UPLOAD_DIR, final_filename)
+        
+        if not os.path.exists(file_path):
+             # Fallback check
+             if os.path.exists(os.path.join(UPLOAD_DIR, f"final_{filename}")):
+                 final_filename = f"final_{filename}"
+                 file_path = os.path.join(UPLOAD_DIR, final_filename)
+             else:
+                 raise HTTPException(status_code=404, detail="File not found")
+
+        return FileResponse(
+            file_path, 
+            media_type='image/jpeg', 
+            filename=f"Traduccion_{filename}.jpg",
+            headers={"Content-Disposition": f"attachment; filename=Traduccion_{filename}.jpg"}
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")
