@@ -90,12 +90,12 @@ export default function Home() {
           setServerImage(`${API_URL}${job.result.original_url}`);
         }
         setIsUploading(false);
-        setJobId(null); // Stop polling indicator logic
+
       } else if (job.status === "failed") {
         console.error("Job Failed:", job.error);
         alert(`Error en el proceso: ${job.error}`);
         setIsUploading(false);
-        setJobId(null);
+
       } else {
         // Continue polling
         setTimeout(() => pollJobStatus(id), 1000);
@@ -119,7 +119,7 @@ export default function Home() {
     setIsUploading(true);
     setProgress(0);
     setCurrentStep("Subiendo Imagen...");
-    setJobId(null);
+
     setViewMode("split"); // Reset view mode on new file
 
     try {
@@ -145,7 +145,7 @@ export default function Home() {
 
       // 3. Iniciar Polling si recibimos Job ID
       if (data.job_id) {
-        setJobId(data.job_id);
+
         pollJobStatus(data.job_id);
       } else {
         // Fallback legacy (si el backend devuelve directo data, aunque ya no deberia)
