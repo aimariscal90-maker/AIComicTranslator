@@ -69,8 +69,42 @@ async def upload_image(file: UploadFile = File(...)):
         "original_name": file.filename
     }
 
+# --- BATCH PROCESSING (DAY 27) ---
+def process_batch_task(project_id: str, batch_id: str, tasks: list):
+    """
+    Procesa múltiples páginas secuencialmente.
+    Día 27: Upload masivo.
+    """
+    db = SessionLocal()
+    total = len(tasks)
+    
+    try:
+        for i, task in enumerate(tasks):
+            try:
+                print(f"[BATCH {batch_id}] Processing {i+1}/{total}: {task['filename']}")
+                
+                # Procesar esta página (reutilizar lógica existente)
+                process_comic_task(
+                    job_id=task['job_id'],
+                    file_path=task['file_path'],
+                    unique_filename=task['filename'],
+                    project_id=project_id,
+                    page_number=task.get('page_number', i + 1)
+                )
+                
+                print(f"[BATCH {batch_id}] Page {i+1}/{total} completed ✓")
+                
+            except Exception as e:
+                print(f"[BATCH ERROR] Page {i+1} failed: {e}")
+                # Continuar con siguiente página
+                
+        print(f"[BATCH {batch_id}] Complete! Processed {total} pages")
+        
+    finally:
+        db.close()
+
 # --- ASYNC TASK LOGIC ---
-def process_comic_task(job_id: str, file_path: str, unique_filename: str, project_id: str = None):
+def process_comic_task(job_id: str, file_path: str, unique_filename: str, project_id: str = None, page_number: int = None):
     try:
         job_manager.update_job(job_id, status="processing", progress=10, step="Iniciando Modelos AI...")
         
@@ -303,6 +337,7 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
                     final_url=final_url_val,
                     debug_url=f"/uploads/{debug_filename}",
                     clean_url=f"/uploads/{clean_text_filename}",
+                    page_number=page_number,  # Day 27: Batch upload
                     status="completed"
                 )
                 db.add(page)
@@ -662,3 +697,114 @@ async def download_final_image(filename: str):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")
+
+# --- BATCH UPLOAD ENDPOINT (DAY 27) ---
+@app.post("/projects/{project_id}/upload-batch")
+async def upload_batch(
+    project_id: str,
+    background_tasks: BackgroundTasks,
+    files: List[UploadFile] = File(None),
+    zip_file: UploadFile = File(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Day 27: Sube múltiples imágenes o un ZIP para procesamiento en batch.
+    Acepta:
+    - files: Lista de archivos de imagen
+    - zip_file: Un archivo ZIP con imágenes
+    """
+    # Validar proyecto existe
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    batch_id = str(uuid.uuid4())
+    tasks = []
+    
+    try:
+        # Caso 1: ZIP file
+        if zip_file and zip_file.filename.endswith('.zip'):
+            print(f"[BATCH {batch_id}] Processing ZIP: {zip_file.filename}")
+            
+            # Guardar ZIP temporalmente
+            zip_temp_path = os.path.join(UPLOAD_DIR, f"temp_{batch_id}.zip")
+            with open(zip_temp_path, "wb") as buffer:
+                shutil.copyfileobj(zip_file.file, buffer)
+            
+            # Descomprimir
+            import zipfile
+            extract_dir = os.path.join(UPLOAD_DIR, f"extract_{batch_id}")
+            os.makedirs(extract_dir, exist_ok=True)
+            
+            with zipfile.ZipFile(zip_temp_path, 'r') as zip_ref:
+                zip_ref.extractall(extract_dir)
+            
+            # Buscar todas las imágenes (ordenadas alfabéticamente)
+            image_files = []
+            for root, dirs, filenames in os.walk(extract_dir):
+                for filename in sorted(filenames):
+                    if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
+                        image_files.append(os.path.join(root, filename))
+            
+            # Crear tareas
+            for i, img_path in enumerate(image_files):
+                unique_filename = f"{uuid.uuid4()}.jpg"
+                dest = os.path.join(UPLOAD_DIR, unique_filename)
+                shutil.copy(img_path, dest)
+                
+                job_id = str(uuid.uuid4())
+                job_manager.add_job(job_id, {"status": "pending", "progress": 0, "step": "En cola..."})
+                
+                tasks.append({
+                    "file_path": dest,
+                    "filename": unique_filename,
+                    "page_number": i + 1,
+                    "job_id": job_id
+                })
+            
+            # Limpiar archivos temporales
+            shutil.rmtree(extract_dir)
+            os.remove(zip_temp_path)
+            
+            print(f"[BATCH {batch_id}] ZIP extracted: {len(tasks)} images")
+        
+        # Caso 2: Múltiples archivos
+        elif files and len(files) > 0:
+            print(f"[BATCH {batch_id}] Processing {len(files)} files")
+            
+            for i, file in enumerate(files):
+                # Guardar archivo
+                unique_filename = f"{uuid.uuid4()}.jpg"
+                file_path = os.path.join(UPLOAD_DIR, unique_filename)
+                
+                with open(file_path, "wb") as buffer:
+                    shutil.copyfileobj(file.file, buffer)
+                
+                # Crear job
+                job_id = str(uuid.uuid4())
+                job_manager.add_job(job_id, {"status": "pending", "progress": 0, "step": "En cola..."})
+                
+                tasks.append({
+                    "file_path": file_path,
+                    "filename": unique_filename,
+                    "page_number": i + 1,
+                    "job_id": job_id
+                })
+        
+        else:
+            raise HTTPException(status_code=400, detail="No files or zip provided")
+        
+        # Procesar en background
+        background_tasks.add_task(process_batch_task, project_id, batch_id, tasks)
+        
+        return {
+            "batch_id": batch_id,
+            "total_pages": len(tasks),
+            "job_ids": [t["job_id"] for t in tasks],
+            "message": f"Batch processing started: {len(tasks)} pages"
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Batch upload failed: {str(e)}")
