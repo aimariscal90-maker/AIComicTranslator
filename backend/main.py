@@ -24,6 +24,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 # Configuración de CORS
 origins = [
     "http://localhost:3000",
+    os.getenv("ALLOWED_ORIGINS"), # Production Vercel URL
 ]
 
 app.add_middleware(
