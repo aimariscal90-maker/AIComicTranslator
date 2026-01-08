@@ -81,7 +81,7 @@ export default function BatchUploadModal({ isOpen, onClose, selectedProject }: B
                 throw new Error('Invalid response from server: missing job_ids array');
             }
 
-            setJobIds(data.job_ids);
+
             setProgress({ current: 0, total: data.total_pages });
 
             // Polling para progreso
