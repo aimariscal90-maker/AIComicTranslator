@@ -97,20 +97,34 @@ async def upload_image(file: UploadFile = File(...)):
     }
 
 # --- BATCH PROCESSING (DAY 27) ---
+MAX_PARALLEL_WORKERS = 3  # Procesar 3 páginas simultáneamente
+
 def process_batch_task(project_id: str, batch_id: str, tasks: list):
     """
-    Procesa múltiples páginas secuencialmente.
-    Día 27: Upload masivo.
+    Procesa múltiples páginas en paralelo usando ThreadPoolExecutor.
+    Día 27.5: Procesamiento paralelo para velocidad.
     """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from threading import Lock
+    
     db = SessionLocal()
     total = len(tasks)
+    completed_lock = Lock()
+    completed_count = 0
     
     try:
-        for i, task in enumerate(tasks):
+        print(f"[BATCH {batch_id}] Starting parallel processing: {total} pages with {MAX_PARALLEL_WORKERS} workers")
+        
+        def process_single_task(task_data):
+            """Wrapper para procesar una tarea individual"""
+            nonlocal completed_count
+            i = task_data['index']
+            task = task_data['task']
+            
             try:
-                print(f"[BATCH {batch_id}] Processing {i+1}/{total}: {task['filename']}")
+                print(f"[BATCH {batch_id}] 🚀 Starting page {i+1}/{total}: {task['filename']}")
                 
-                # Procesar esta página (reutilizar lógica existente)
+                # Procesar esta página
                 process_comic_task(
                     job_id=task['job_id'],
                     file_path=task['file_path'],
@@ -119,13 +133,32 @@ def process_batch_task(project_id: str, batch_id: str, tasks: list):
                     page_number=task.get('page_number', i + 1)
                 )
                 
-                print(f"[BATCH {batch_id}] Page {i+1}/{total} completed ✓")
+                with completed_lock:
+                    completed_count += 1
+                    print(f"[BATCH {batch_id}] ✅ Page {i+1}/{total} completed ({completed_count}/{total} total)")
+                
+                return {'success': True, 'index': i}
                 
             except Exception as e:
-                print(f"[BATCH ERROR] Page {i+1} failed: {e}")
-                # Continuar con siguiente página
-                
-        print(f"[BATCH {batch_id}] Complete! Processed {total} pages")
+                print(f"[BATCH ERROR] ❌ Page {i+1} failed: {e}")
+                import traceback
+                traceback.print_exc()
+                return {'success': False, 'index': i, 'error': str(e)}
+        
+        # Preparar tareas con índices
+        indexed_tasks = [{'index': i, 'task': task} for i, task in enumerate(tasks)]
+        
+        # Procesar en paralelo con ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=MAX_PARALLEL_WORKERS) as executor:
+            # Submit all tasks
+            futures = {executor.submit(process_single_task, task_data): task_data for task_data in indexed_tasks}
+            
+            # Wait for completion
+            for future in as_completed(futures):
+                result = future.result()
+                # Result logging ya está en process_single_task
+        
+        print(f"[BATCH {batch_id}] 🎉 Complete! Processed {total} pages ({completed_count} successful)")
         
     finally:
         db.close()
@@ -828,8 +861,8 @@ async def upload_batch(
                 dest = os.path.join(UPLOAD_DIR, unique_filename)
                 shutil.copy(img_path, dest)
                 
-                job_id = str(uuid.uuid4())
-                job_manager.add_job(job_id, {"status": "pending", "progress": 0, "step": "En cola..."})
+                job_id = job_manager.create_job()
+                job_manager.update_job(job_id, status="pending", progress=0, step="En cola...")
                 
                 tasks.append({
                     "file_path": dest,
@@ -860,8 +893,8 @@ async def upload_batch(
                     shutil.copyfileobj(file.file, buffer)
                 
                 # Crear job
-                job_id = str(uuid.uuid4())
-                job_manager.add_job(job_id, {"status": "pending", "progress": 0, "step": "En cola..."})
+                job_id = job_manager.create_job()
+                job_manager.update_job(job_id, status="pending", progress=0, step="En cola...")
                 
                 tasks.append({
                     "file_path": file_path,
