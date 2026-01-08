@@ -16,3 +16,4 @@ alembic
 pdf2image
 rarfile
 img2pdf
+psycopg2-binary
