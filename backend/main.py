@@ -722,29 +722,78 @@ async def upload_batch(
     tasks = []
     
     try:
-        # Caso 1: ZIP file
-        if zip_file and zip_file.filename.endswith('.zip'):
-            print(f"[BATCH {batch_id}] Processing ZIP: {zip_file.filename}")
-            
-            # Guardar ZIP temporalmente
-            zip_temp_path = os.path.join(UPLOAD_DIR, f"temp_{batch_id}.zip")
-            with open(zip_temp_path, "wb") as buffer:
-                shutil.copyfileobj(zip_file.file, buffer)
-            
-            # Descomprimir
-            import zipfile
+        # Función helper para extraer imágenes de archivos
+        def extract_images_from_archive(file_path: str, file_type: str) -> list:
+            """Extrae imágenes de PDF, ZIP, CBZ, CBR"""
             extract_dir = os.path.join(UPLOAD_DIR, f"extract_{batch_id}")
             os.makedirs(extract_dir, exist_ok=True)
-            
-            with zipfile.ZipFile(zip_temp_path, 'r') as zip_ref:
-                zip_ref.extractall(extract_dir)
-            
-            # Buscar todas las imágenes (ordenadas alfabéticamente)
             image_files = []
-            for root, dirs, filenames in os.walk(extract_dir):
-                for filename in sorted(filenames):
-                    if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
-                        image_files.append(os.path.join(root, filename))
+            
+            if file_type == 'pdf':
+                # Extraer PDF a imágenes
+                from pdf2image import convert_from_path
+                print(f"[BATCH] Converting PDF to images...")
+                try:
+                    pages = convert_from_path(file_path, dpi=300)
+                    for i, page in enumerate(pages):
+                        img_path = os.path.join(extract_dir, f"page_{i+1:03d}.jpg")
+                        page.save(img_path, 'JPEG')
+                        image_files.append(img_path)
+                except Exception as e:
+                    print(f"[ERROR] PDF conversion failed: {e}")
+                    print("NOTA: PDF requiere poppler. Instala con: choco install poppler (Windows) o brew install poppler (Mac)")
+                    raise
+            
+            elif file_type in ['zip', 'cbz']:
+                # Descomprimir ZIP/CBZ
+                import zipfile
+                with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                    zip_ref.extractall(extract_dir)
+                
+                # Buscar imágenes
+                for root, dirs, filenames in os.walk(extract_dir):
+                    for filename in sorted(filenames):
+                        if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp')):
+                            image_files.append(os.path.join(root, filename))
+            
+            elif file_type == 'cbr':
+                # Descomprimir RAR/CBR
+                import rarfile
+                with rarfile.RarFile(file_path, 'r') as rar_ref:
+                    rar_ref.extractall(extract_dir)
+                
+                # Buscar imágenes
+                for root, dirs, filenames in os.walk(extract_dir):
+                    for filename in sorted(filenames):
+                        if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp')):
+                            image_files.append(os.path.join(root, filename))
+            
+            return sorted(image_files)
+        
+        # Caso 1: Archivo especial (PDF, ZIP, CBZ, CBR)
+        if zip_file and zip_file.filename:
+            filename_lower = zip_file.filename.lower()
+            
+            # Detectar tipo de archivo
+            if filename_lower.endswith('.pdf'):
+                file_type = 'pdf'
+            elif filename_lower.endswith('.cbz') or (filename_lower.endswith('.zip') and not filename_lower.endswith('.cbz')):
+                file_type = 'zip'
+            elif filename_lower.endswith('.cbr'):
+                file_type = 'cbr'
+            else:
+                raise HTTPException(status_code=400, detail="Formato no soportado. Use: PDF, ZIP, CBZ, o CBR")
+            
+            print(f"[BATCH {batch_id}] Processing {file_type.upper()}: {zip_file.filename}")
+            
+            # Guardar archivo temporalmente
+            file_extension = '.pdf' if file_type == 'pdf' else ('.cbr' if file_type == 'cbr' else '.zip')
+            temp_path = os.path.join(UPLOAD_DIR, f"temp_{batch_id}{file_extension}")
+            with open(temp_path, "wb") as buffer:
+                shutil.copyfileobj(zip_file.file, buffer)
+            
+            # Extraer imágenes usando función helper
+            image_files = extract_images_from_archive(temp_path, file_type)
             
             # Crear tareas
             for i, img_path in enumerate(image_files):
@@ -763,10 +812,13 @@ async def upload_batch(
                 })
             
             # Limpiar archivos temporales
-            shutil.rmtree(extract_dir)
-            os.remove(zip_temp_path)
+            extract_dir = os.path.join(UPLOAD_DIR, f"extract_{batch_id}")
+            if os.path.exists(extract_dir):
+                shutil.rmtree(extract_dir)
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
             
-            print(f"[BATCH {batch_id}] ZIP extracted: {len(tasks)} images")
+            print(f"[BATCH {batch_id}] {file_type.upper()} extracted: {len(tasks)} images")
         
         # Caso 2: Múltiples archivos
         elif files and len(files) > 0:
