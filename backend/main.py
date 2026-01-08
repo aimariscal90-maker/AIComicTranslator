@@ -200,6 +200,7 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
             
             try:
                 print(f"[DAY 25] Classifying {len(texts_for_classification)} bubbles...")
+                print(f"[DAY 25 DEBUG] Texts to classify: {texts_for_classification[:5]}...")  # Primeros 5
                 bubble_types = translator.classify_bubbles_batch(texts_for_classification)
                 
                 # Asignar tipos
@@ -210,6 +211,7 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
                         bubbles[i]['bubble_type'] = "speech"
                         
                 print(f"[DAY 25] Classification complete. Types: {set(bubble_types)}")
+
                 
             except Exception as e:
                 print(f"[ERROR] Bubble classification failed: {e}")

@@ -157,117 +157,85 @@ Just the pure translations."""
 
     def classify_bubbles_batch(self, texts_list):
         """
-        Clasifica el tipo de cada bocadillo usando LLM.
+        Clasifica el tipo de cada bocadillo usando reglas heurísticas + LLM.
         
         Input: ["Hello!", "BOOM!", "I think..."]
         Output: ["speech", "sfx", "thought"]
         
-        Día 25: Clasificación automática por tipo.
+        Día 25: Clasificación híbrida (reglas + LLM).
         """
         if not texts_list or not any(t.strip() for t in texts_list):
             return ["speech"] * len(texts_list)
         
-        if not self.model:
-            # Sin modelo LLM, asumir speech
-            return ["speech"] * len(texts_list)
+        classifications = []
         
-        try:
-            # Formatear textos con números
-            texts_formatted = "\n".join([f"{i+1}. {text[:50]}" for i, text in enumerate(texts_list) if text.strip()])
+        # Lista de onomatopeyas comunes
+        sfx_patterns = [
+            'boom', 'bang', 'crash', 'splash', 'pow', 'bam', 'thud', 'wham',
+            'crack', 'snap', 'pop', 'whoosh', 'zoom', 'swoosh', 'zzz',
+            'kaboom', 'smash', 'clang', 'clink', 'buzz', 'hiss', 'thump',
+            'slam', 'clack', 'tick', 'tock', 'drip', 'beep', 'ring'
+        ]
+        
+        for text in texts_list:
+            text_clean = text.strip()
+            text_lower = text_clean.lower()
             
-            # Prompt de clasificación mejorado (Day 25 v3 - More Examples)
-            prompt = f"""You are a comic book expert. Classify each text into EXACTLY ONE category.
-
-IMPORTANT RULES:
-1. SFX: ONLY if it's a sound effect/onomatopoeia (BOOM, SPLASH, BANG, CRACK, whoosh, zzz)
-2. NARRATION: ONLY if it's clearly narrator text (starts with "Meanwhile", "Later", "The next day", or describes scene)
-3. SHOUT: ONLY if ALL CAPS and expressing strong emotion (not just emphasis)
-4. THOUGHT: ONLY if clearly internal monologue (uses "I think", "I wonder", "Maybe I should")
-5. SPEECH: Everything else (default for dialogue)
-
-WHEN IN DOUBT → use "speech"
-
-Examples:
-
-SFX (sound effects):
-- "BOOM" → sfx
-- "SPLASH" → sfx  
-- "BANG!" → sfx
-- "Crack" → sfx
-- "whoosh" → sfx
-- "zzz..." → sfx
-- "CRASH!" → sfx
-- "BAM" → sfx
-- "POW!" → sfx
-- "Thud" → sfx
-
-SPEECH (normal dialogue):
-- "Hello there" → speech
-- "You're late!" → speech
-- "What happened?" → speech  
-- "I don't know" → speech
-- "Let's go" → speech
-- "Really?" → speech
-- "Come on!" → speech
-- "Wait for me" → speech
-- "That's amazing" → speech
-- "I agree" → speech
-
-SHOUT (all caps + emotion):
-- "WHAT?!" → shout
-- "NOOO!!" → shout
-- "AAAHHH!" → shout
-- "STOP!" → shout
-- "HELP!" → shout
-- "GET OUT!" → shout
-- "I WON'T LET YOU!" → shout
-
-NARRATION (narrator):
-- "Meanwhile, in the city..." → narration
-- "Later that day..." → narration
-- "The next morning..." → narration
-- "Back at headquarters..." → narration
-- "Two hours earlier..." → narration
-
-THOUGHT (internal):
-- "I think I should go" → thought
-- "Maybe I'm wrong..." → thought
-- "I wonder what happened" → thought
-- "What should I do?" → thought (if clearly internal)
-
-Texts to classify:
-{texts_formatted}
-
-Respond with ONLY the category names, one per line:"""
-
-            response = self.model.generate_content(prompt)
-            classifications_text = response.text.strip()
-            
-            # Parsear respuesta
-            lines = classifications_text.split('\n')
-            classifications = []
-            
-            valid_types = ["speech", "thought", "shout", "narration", "sfx"]
-            
-            for line in lines:
-                cleaned = line.strip().lower()
-                
-                # Extraer solo la categoría si hay texto extra
-                for valid_type in valid_types:
-                    if valid_type in cleaned:
-                        classifications.append(valid_type)
-                        break
-                else:
-                    # Default a speech si no se encuentra categoría válida
-                    classifications.append("speech")
-            
-            # Asegurar mismo número de clasificaciones
-            while len(classifications) < len(texts_list):
+            # REGLA 1: Vacío → speech
+            if not text_clean:
                 classifications.append("speech")
+                continue
             
-            return classifications[:len(texts_list)]
+            # REGLA 2: Onomatopeyas obvias (SFX)
+            # Si el texto es solo una palabra y coincide con patrones de sonido
+            words = text_clean.split()
+            if len(words) <= 2:  # Máximo 2 palabras
+                is_sfx = False
+                for word in words:
+                    word_lower = word.lower().strip('!?.,')
+                    if word_lower in sfx_patterns:
+                        is_sfx = True
+                        print(f"[CLASSIFY DEBUG] '{text_clean}' → SFX (matched: {word_lower})")
+                        break
+                
+                if is_sfx:
+                    classifications.append("sfx")
+                    continue
             
-        except Exception as e:
-            print(f"Bubble classification error: {e}")
-            # Fallback: asumir todo speech
-            return ["speech"] * len(texts_list)
+            # REGLA 3: TODO MAYÚSCULAS + corto + exclamaciones → SHOUT o SFX
+            if text_clean.isupper() and len(text_clean) <= 20:
+                # Si tiene patrón de sonido → SFX
+                is_sound = any(pattern in text_lower for pattern in sfx_patterns)
+                if is_sound:
+                    print(f"[CLASSIFY DEBUG] '{text_clean}' → SFX (uppercase + sound pattern)")
+                    classifications.append("sfx")
+                else:
+                    # Si tiene exclamaciones múltiples → SHOUT
+                    if text_clean.count('!') >= 2 or '!!' in text_clean:
+                        print(f"[CLASSIFY DEBUG] '{text_clean}' → SHOUT (uppercase + exclamations)")
+                        classifications.append("shout")
+                    else:
+                        print(f"[CLASSIFY DEBUG] '{text_clean}' → SFX (uppercase + short)")
+                        classifications.append("sfx")  # Asumir SFX si es corto y mayúsculas
+                continue
+            
+            # REGLA 4: Palabras clave de narración
+            narration_starts = ['meanwhile', 'later', 'earlier', 'the next', 'back at', 'that night', 'hours later']
+            if any(text_lower.startswith(keyword) for keyword in narration_starts):
+                print(f"[CLASSIFY DEBUG] '{text_clean}' → NARRATION")
+                classifications.append("narration")
+                continue
+            
+            # REGLA 5: Pensamiento (keywords)
+            thought_keywords = ['i think', 'i wonder', 'maybe i', 'i should', 'what if', 'i must']
+            if any(keyword in text_lower for keyword in thought_keywords):
+                print(f"[CLASSIFY DEBUG] '{text_clean}' → THOUGHT")
+                classifications.append("thought")
+                continue
+            
+            # Si no coincide con reglas → speech por defecto
+            print(f"[CLASSIFY DEBUG] '{text_clean}' → SPEECH (default)")
+            classifications.append("speech")
+        
+        print(f"[CLASSIFY SUMMARY] Total: {len(classifications)}, Types: {set(classifications)}")
+        return classifications
