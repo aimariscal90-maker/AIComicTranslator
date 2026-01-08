@@ -9,11 +9,7 @@ import ComparisonView from "@/app/components/ComparisonView";
 import BatchUploadModal from "@/app/components/BatchUploadModal";
 import { API_URL } from "@/config";
 
-interface UploadResponse {
-  filename: string;
-  url: string;
-  original_name: string;
-}
+
 
 interface ApiResponse {
   status: string;
@@ -41,18 +37,15 @@ export default function Home() {
   const [serverImage, setServerImage] = useState<string | null>(null);
 
   // Polling State (Day 17)
-  const [jobId, setJobId] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState("");
   const [apiResponse, setApiResponse] = useState<ApiResponse | null>(null);
   const [viewMode, setViewMode] = useState<"split" | "compare">("split");
-  const [showEditModal, setShowEditModal] = useState(false);
   const [editingBubble, setEditingBubble] = useState<{ index: number, text: string, font: string } | null>(null);
 
   const [projects, setProjects] = useState<any[]>([]);
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
-  const [newProjectName, setNewProjectName] = useState("");
 
   // Day 27: Batch Upload
   const [showBatchUpload, setShowBatchUpload] = useState(false);
