@@ -157,85 +157,106 @@ Just the pure translations."""
 
     def classify_bubbles_batch(self, texts_list):
         """
-        Clasifica el tipo de cada bocadillo usando reglas heurísticas + LLM.
+        Clasifica el tipo de cada bocadillo usando SOLO Gemini LLM con JSON.
         
         Input: ["Hello!", "BOOM!", "I think..."]
         Output: ["speech", "sfx", "thought"]
         
-        Día 25: Clasificación híbrida (reglas + LLM).
+        Día 25 v2: LLM puro con prompt agresivo + JSON.
         """
         if not texts_list or not any(t.strip() for t in texts_list):
             return ["speech"] * len(texts_list)
         
-        classifications = []
+        if not self.model:
+            print("[CLASSIFY] Gemini not available, defaulting all to speech")
+            return ["speech"] * len(texts_list)
         
-        # Lista de onomatopeyas comunes
-        sfx_patterns = [
-            'boom', 'bang', 'crash', 'splash', 'pow', 'bam', 'thud', 'wham',
-            'crack', 'snap', 'pop', 'whoosh', 'zoom', 'swoosh', 'zzz',
-            'kaboom', 'smash', 'clang', 'clink', 'buzz', 'hiss', 'thump',
-            'slam', 'clack', 'tick', 'tock', 'drip', 'beep', 'ring'
-        ]
-        
-        for text in texts_list:
-            text_clean = text.strip()
-            text_lower = text_clean.lower()
+        try:
+            # Formatear textos con índices para el LLM
+            texts_formatted = "\n".join([f"{i+1}. \"{text[:80]}\"" for i, text in enumerate(texts_list)])
             
-            # REGLA 1: Vacío → speech
-            if not text_clean:
-                classifications.append("speech")
-                continue
+            # Prompt agresivo y optimizado
+            prompt = f"""You are an expert comic book analyst. Classify each text into EXACTLY ONE category.
+
+CRITICAL: Be AGGRESSIVE with classification. Don't default to "speech" - look for patterns!
+
+Categories:
+- "sfx": ANY sound effect or onomatopoeia (BOOM, whoosh, crack, zzzz, drip, etc.)
+- "shout": Text in ALL CAPS expressing strong emotion (WHAT?!, NOOO!!, STOP!!)
+- "narration": Scene descriptions, time/location indicators (Meanwhile..., Later..., The city...)
+- "thought": Internal monologue, questions to self (I think..., What if..., Maybe I...)
+- "speech": Only clear character dialogue
+
+RULES FOR SFX:
+- If it's a single word in caps → likely SFX
+- If it sounds like a sound → SFX
+- Common patterns: BOOM, BANG, CRASH, SPLASH, WHOOSH, SNAP, CRACK, POP, THUD, SLAM, etc.
+
+RULES FOR SHOUT:
+- ALL CAPS + punctuation (!!, ?!) → SHOUT
+- Emotional outbursts → SHOUT
+
+Texts to classify:
+{texts_formatted}
+
+Respond with ONLY a valid JSON array of categories, nothing else.
+Example: ["speech", "sfx", "shout", "speech", "narration"]
+
+JSON array:"""
+
+            response = self.model.generate_content(prompt)
+            response_text = response.text.strip()
             
-            # REGLA 2: Onomatopeyas obvias (SFX)
-            # Si el texto es solo una palabra y coincide con patrones de sonido
-            words = text_clean.split()
-            if len(words) <= 2:  # Máximo 2 palabras
-                is_sfx = False
-                for word in words:
-                    word_lower = word.lower().strip('!?.,')
-                    if word_lower in sfx_patterns:
-                        is_sfx = True
-                        print(f"[CLASSIFY DEBUG] '{text_clean}' → SFX (matched: {word_lower})")
-                        break
+            print(f"[CLASSIFY LLM] Raw response: {response_text[:200]}")
+            
+            # Limpiar respuesta: quitar markdown, espacios, etc.
+            response_clean = response_text.replace('```json', '').replace('```', '').strip()
+            
+            # Parsear JSON
+            import json
+            try:
+                classifications = json.loads(response_clean)
                 
-                if is_sfx:
-                    classifications.append("sfx")
-                    continue
-            
-            # REGLA 3: TODO MAYÚSCULAS + corto + exclamaciones → SHOUT o SFX
-            if text_clean.isupper() and len(text_clean) <= 20:
-                # Si tiene patrón de sonido → SFX
-                is_sound = any(pattern in text_lower for pattern in sfx_patterns)
-                if is_sound:
-                    print(f"[CLASSIFY DEBUG] '{text_clean}' → SFX (uppercase + sound pattern)")
-                    classifications.append("sfx")
-                else:
-                    # Si tiene exclamaciones múltiples → SHOUT
-                    if text_clean.count('!') >= 2 or '!!' in text_clean:
-                        print(f"[CLASSIFY DEBUG] '{text_clean}' → SHOUT (uppercase + exclamations)")
-                        classifications.append("shout")
+                # Validar que sea una lista
+                if not isinstance(classifications, list):
+                    raise ValueError("Response is not a list")
+                
+                # Validar tipos
+                valid_types = ["speech", "thought", "shout", "narration", "sfx"]
+                classifications_clean = []
+                for c in classifications:
+                    c_lower = str(c).lower().strip()
+                    if c_lower in valid_types:
+                        classifications_clean.append(c_lower)
                     else:
-                        print(f"[CLASSIFY DEBUG] '{text_clean}' → SFX (uppercase + short)")
-                        classifications.append("sfx")  # Asumir SFX si es corto y mayúsculas
-                continue
-            
-            # REGLA 4: Palabras clave de narración
-            narration_starts = ['meanwhile', 'later', 'earlier', 'the next', 'back at', 'that night', 'hours later']
-            if any(text_lower.startswith(keyword) for keyword in narration_starts):
-                print(f"[CLASSIFY DEBUG] '{text_clean}' → NARRATION")
-                classifications.append("narration")
-                continue
-            
-            # REGLA 5: Pensamiento (keywords)
-            thought_keywords = ['i think', 'i wonder', 'maybe i', 'i should', 'what if', 'i must']
-            if any(keyword in text_lower for keyword in thought_keywords):
-                print(f"[CLASSIFY DEBUG] '{text_clean}' → THOUGHT")
-                classifications.append("thought")
-                continue
-            
-            # Si no coincide con reglas → speech por defecto
-            print(f"[CLASSIFY DEBUG] '{text_clean}' → SPEECH (default)")
-            classifications.append("speech")
-        
-        print(f"[CLASSIFY SUMMARY] Total: {len(classifications)}, Types: {set(classifications)}")
-        return classifications
+                        classifications_clean.append("speech")
+                
+                # Asegurar mismo tamaño
+                while len(classifications_clean) < len(texts_list):
+                    classifications_clean.append("speech")
+                
+                result = classifications_clean[:len(texts_list)]
+                print(f"[CLASSIFY LLM] Result: {dict((t, result.count(t)) for t in set(result))}")
+                return result
+                
+            except json.JSONDecodeError as e:
+                print(f"[CLASSIFY ERROR] JSON parse failed: {e}")
+                print(f"[CLASSIFY ERROR] Response was: {response_clean}")
+                # Fallback: intentar parsear línea por línea
+                lines = response_clean.split('\n')
+                classifications = []
+                for line in lines:
+                    line_clean = line.strip().strip('"').strip("'").strip(',').lower()
+                    if line_clean in valid_types:
+                        classifications.append(line_clean)
+                
+                if len(classifications) >= len(texts_list):
+                    return classifications[:len(texts_list)]
+                else:
+                    return ["speech"] * len(texts_list)
+                    
+        except Exception as e:
+            print(f"[CLASSIFY ERROR] Classification failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return ["speech"] * len(texts_list)
