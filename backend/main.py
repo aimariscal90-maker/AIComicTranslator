@@ -955,3 +955,89 @@ async def upload_batch(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Batch upload failed: {str(e)}")
+
+# --- EXPORT ENDPOINTS (DAY 28) ---
+@app.get("/projects/{project_id}/export")
+async def export_project(project_id: str, format: str = "pdf", db: Session = Depends(get_db)):
+    """
+    Export project to PDF or CBZ.
+    """
+    try:
+        import img2pdf
+        import io
+        from PIL import Image
+
+        # 1. Get all pages for project
+        pages = db.query(Page).filter(Page.project_id == project_id).order_by(Page.page_number).all()
+        
+        if not pages:
+            # Fallback: if no pages in DB, try to list files in directory (legacy mode)
+             raise HTTPException(status_code=404, detail="No pages found for this project")
+
+        # 2. Collect image paths
+        image_paths = []
+        for page in pages:
+            # Prefer final_url (translated), fallback to original
+            # final_url might look like "/uploads/final_xxx.jpg"
+            if page.final_url:
+                filename = os.path.basename(page.final_url)
+                path = os.path.join(UPLOAD_DIR, filename)
+            elif page.original_url:
+                filename = os.path.basename(page.original_url)
+                path = os.path.join(UPLOAD_DIR, filename)
+            else:
+                continue
+            
+            if os.path.exists(path):
+                image_paths.append((page.page_number or 0, path))
+        
+        # Sort by page number again to be safe
+        image_paths.sort(key=lambda x: x[0])
+        final_paths = [p[1] for p in image_paths]
+        
+        if not final_paths:
+             raise HTTPException(status_code=404, detail="No valid images found to export")
+
+        project = db.query(Project).filter(Project.id == project_id).first()
+        project_name = project.name if project else "comic"
+        safe_name = "".join([c for c in project_name if c.isalnum() or c in (' ', '-', '_')]).strip().replace(" ", "_")
+
+        if format.lower() == 'pdf':
+            # Create PDF
+            pdf_bytes = img2pdf.convert(final_paths)
+            
+            # Using Response for in-memory content
+            from fastapi import Response
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f"attachment; filename={safe_name}.pdf"}
+            )
+
+        elif format.lower() in ['cbz', 'zip']:
+            # Create ZIP/CBZ
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                for idx, path in enumerate(final_paths):
+                    # Add file to zip
+                    # Name inside zip: 001.jpg, 002.jpg, etc.
+                    ext = os.path.splitext(path)[1]
+                    arcname = f"{idx+1:03d}{ext}"
+                    zip_file.write(path, arcname)
+            
+            zip_buffer.seek(0)
+            from fastapi import Response
+            return Response(
+                content=zip_buffer.getvalue(),
+                media_type="application/zip", # CBZ is technically ZIP
+                headers={"Content-Disposition": f"attachment; filename={safe_name}.cbz"}
+            )
+        
+        else:
+            raise HTTPException(status_code=400, detail="Invalid format. Use 'pdf' or 'cbz'")
+
+    except Exception as e:
+        print(f"[EXPORT ERROR] {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
