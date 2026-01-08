@@ -9,7 +9,7 @@ interface Project {
     name: string;
     description: string | null;
     created_at: string;
-    pages: any[];
+    pages: unknown[];
 }
 
 export default function DashboardPage() {

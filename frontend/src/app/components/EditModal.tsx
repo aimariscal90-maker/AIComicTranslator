@@ -39,7 +39,7 @@ export default function EditModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all animate-in fade-in zoom-in duration-200">
-        
+
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-4">
           <h3 className="text-white text-lg font-bold flex items-center gap-2">
@@ -49,7 +49,7 @@ export default function EditModal({
 
         {/* Body */}
         <div className="p-6 space-y-4">
-          
+
           {/* Text Input */}
           <div className="space-y-2">
             <label className="text-sm font-semibold text-gray-700">
@@ -83,9 +83,9 @@ export default function EditModal({
               </div>
             </div>
             {font === "WildWords" && (
-               <p className="text-xs text-amber-600 mt-1">
-                 ⚠️ Requiere licencia "wildwords.ttf" en backend.
-               </p>
+              <p className="text-xs text-amber-600 mt-1">
+                ⚠️ Requiere licencia &quot;wildwords.ttf&quot; en backend.
+              </p>
             )}
           </div>
         </div>

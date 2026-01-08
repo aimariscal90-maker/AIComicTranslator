@@ -14,7 +14,7 @@ export default function BatchUploadModal({ isOpen, onClose, selectedProject }: B
     const [zipFile, setZipFile] = useState<File | null>(null);
     const [uploading, setUploading] = useState(false);
     const [progress, setProgress] = useState({ current: 0, total: 0 });
-    const [jobIds, setJobIds] = useState<string[]>([]);
+    // const [jobIds, setJobIds] = useState<string[]>([]); // Removed unused state
 
     if (!isOpen) return null;
 
