@@ -104,15 +104,17 @@ def process_batch_task(project_id: str, batch_id: str, tasks: list):
     Procesa múltiples páginas en paralelo usando ThreadPoolExecutor.
     Día 27.5: Procesamiento paralelo para velocidad.
     """
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    from threading import Lock
-    
-    db = SessionLocal()
-    total = len(tasks)
-    completed_lock = Lock()
-    completed_count = 0
-    
     try:
+        print(f"[BATCH {batch_id}] INIT: Starting process_batch_task with {len(tasks)} tasks")
+        
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from threading import Lock
+        
+        db = SessionLocal()
+        total = len(tasks)
+        completed_lock = Lock()
+        completed_count = 0
+        
         print(f"[BATCH {batch_id}] Starting parallel processing: {total} pages with {MAX_PARALLEL_WORKERS} workers")
         
         def process_single_task(task_data):
@@ -160,8 +162,12 @@ def process_batch_task(project_id: str, batch_id: str, tasks: list):
         
         print(f"[BATCH {batch_id}] 🎉 Complete! Processed {total} pages ({completed_count} successful)")
         
-    finally:
         db.close()
+        
+    except Exception as e:
+        print(f"[BATCH FATAL ERROR] process_batch_task crashed: {e}")
+        import traceback
+        traceback.print_exc()
 
 # --- ASYNC TASK LOGIC ---
 def process_comic_task(job_id: str, file_path: str, unique_filename: str, project_id: str = None, page_number: int = None):
