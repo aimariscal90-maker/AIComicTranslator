@@ -7,6 +7,7 @@ import ImagePreview from "@/components/ImagePreview";
 import EditModal from "@/app/components/EditModal";
 import ComparisonView from "@/app/components/ComparisonView";
 import BatchUploadModal from "@/app/components/BatchUploadModal";
+import { API_URL } from "@/config";
 
 interface UploadResponse {
   filename: string;
@@ -66,7 +67,7 @@ export default function Home() {
 
   const fetchProjects = async () => {
     try {
-      const res = await fetch("http://localhost:8000/projects");
+      const res = await fetch(`${API_URL}/projects`);
       if (res.ok) {
         const data = await res.json();
         setProjects(data);
@@ -80,7 +81,7 @@ export default function Home() {
 
   const pollJobStatus = async (id: string) => {
     try {
-      const res = await fetch(`http://localhost:8000/jobs/${id}`);
+      const res = await fetch(`${API_URL}/jobs/${id}`);
       if (!res.ok) return; // Keep trying or handle error
       const job = await res.json();
 
@@ -92,11 +93,11 @@ export default function Home() {
 
         // Set Server Image Logic
         if (job.result.final_url) {
-          setServerImage(`http://localhost:8000${job.result.final_url}`);
+          setServerImage(`${API_URL}${job.result.final_url}`);
         } else if (job.result.debug_url) {
-          setServerImage(`http://localhost:8000${job.result.debug_url}`);
+          setServerImage(`${API_URL}${job.result.debug_url}`);
         } else {
-          setServerImage(`http://localhost:8000${job.result.original_url}`);
+          setServerImage(`${API_URL}${job.result.original_url}`);
         }
         setIsUploading(false);
         setJobId(null); // Stop polling indicator logic
@@ -141,7 +142,7 @@ export default function Home() {
         formData.append("project_id", selectedProject);
       }
 
-      const response = await fetch("http://localhost:8000/process", {
+      const response = await fetch(`${API_URL}/process`, {
         method: "POST",
         body: formData,
       });
@@ -230,14 +231,14 @@ export default function Home() {
           {selectedProject && (
             <div className="mt-4 flex gap-2">
               <a
-                href={`http://localhost:8000/projects/${selectedProject}/export?format=pdf`}
+                href={`${API_URL}/projects/${selectedProject}/export?format=pdf`}
                 download
                 className="flex-1 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-lg font-bold text-center shadow-sm transition-colors flex items-center justify-center gap-2"
               >
                 📄 Descargar PDF
               </a>
               <a
-                href={`http://localhost:8000/projects/${selectedProject}/export?format=cbz`}
+                href={`${API_URL}/projects/${selectedProject}/export?format=cbz`}
                 download
                 className="flex-1 px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg font-bold text-center shadow-sm transition-colors flex items-center justify-center gap-2"
               >
@@ -296,14 +297,14 @@ export default function Home() {
             {/* Export Buttons */}
             <div className="flex gap-4">
               <a
-                href={`http://localhost:8000/process/${apiResponse.id}/download-final`}
+                href={`${API_URL}/process/${apiResponse.id}/download-final`}
                 download
                 className="flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg shadow-md font-bold transition-transform hover:-translate-y-0.5 active:translate-y-0"
               >
                 📥 Descargar Imagen
               </a>
               <a
-                href={`http://localhost:8000/process/${apiResponse.id}/download-zip`}
+                href={`${API_URL}/process/${apiResponse.id}/download-zip`}
                 download
                 className="flex items-center gap-2 px-5 py-2.5 bg-gray-800 hover:bg-gray-900 text-white rounded-lg shadow-md font-bold transition-transform hover:-translate-y-0.5 active:translate-y-0"
               >
@@ -318,7 +319,7 @@ export default function Home() {
           <section className="animate-fade-in-up">
             <ComparisonView
               leftImage={localPreview}
-              rightImage={`http://localhost:8000${apiResponse.final_url}?t=${Date.now()}`}
+              rightImage={`${API_URL}${apiResponse.final_url}?t=${Date.now()}`}
             />
           </section>
         )}
@@ -359,7 +360,7 @@ export default function Home() {
                       onClick={async () => {
                         if (!apiResponse?.id) return;
                         try {
-                          const res = await fetch(`http://localhost:8000/process/${apiResponse.id}/update-all-fonts`, {
+                          const res = await fetch(`${API_URL}/process/${apiResponse.id}/update-all-fonts`, {
                             method: 'PATCH',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ font: fontSelector })
@@ -369,7 +370,7 @@ export default function Home() {
                             // Force cache bust
                             const timestamp = Date.now();
                             setApiResponse(prev => prev ? ({ ...prev, final_url: data.final_url }) : null);
-                            setServerImage(`http://localhost:8000${data.final_url}?t=${timestamp}`);
+                            setServerImage(`${API_URL}${data.final_url}?t=${timestamp}`);
                           }
                         } catch (e) {
                           console.error(e);
@@ -450,7 +451,7 @@ export default function Home() {
                         <div className="border border-blue-200 rounded-lg overflow-hidden relative shadow-sm opacity-70 hover:opacity-100 transition-opacity">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
-                            src={`http://localhost:8000${apiResponse.debug_url}`}
+                            src={`${API_URL}${apiResponse.debug_url}`}
                             alt="Debug View"
                             className="w-full h-auto"
                           />
@@ -480,7 +481,7 @@ export default function Home() {
             onSave={async (newText, newFont) => {
               // Call API update
               try {
-                const res = await fetch(`http://localhost:8000/process/${apiResponse.id}/update-bubble`, {
+                const res = await fetch(`${API_URL}/process/${apiResponse.id}/update-bubble`, {
                   method: 'PATCH',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
@@ -495,7 +496,7 @@ export default function Home() {
                   // Update local state to reflect change immediately if possible, or force reload
                   // Force image reload by updating URL with timestamp
                   const timestamp = Date.now();
-                  setServerImage(`http://localhost:8000${data.final_url}?t=${timestamp}`);
+                  setServerImage(`${API_URL}${data.final_url}?t=${timestamp}`);
 
                   // Update apiResponse data localy too
                   const updatedBubbles = [...apiResponse.bubbles_data];
