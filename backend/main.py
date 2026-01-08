@@ -97,7 +97,7 @@ async def upload_image(file: UploadFile = File(...)):
     }
 
 # --- BATCH PROCESSING (DAY 27) ---
-MAX_PARALLEL_WORKERS = 3  # Procesar 3 páginas simultáneamente
+MAX_PARALLEL_WORKERS = 1  # CPU Limit: 1 (Evita bloqueo del PC)
 
 def log_to_file(msg):
     try:
