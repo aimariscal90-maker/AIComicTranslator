@@ -20,12 +20,17 @@ export default function BatchUploadModal({ isOpen, onClose, selectedProject }: B
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(e.target.files || []);
 
-        // Separar ZIP de imágenes
-        const zips = files.filter(f => f.name.endsWith('.zip'));
+        // Separar archivos especiales (ZIP/PDF/CBR/CBZ) de imágenes
+        const specialFiles = files.filter(f =>
+            f.name.endsWith('.zip') ||
+            f.name.endsWith('.pdf') ||
+            f.name.endsWith('.cbr') ||
+            f.name.endsWith('.cbz')
+        );
         const images = files.filter(f => f.type.startsWith('image/'));
 
-        if (zips.length > 0) {
-            setZipFile(zips[0]);
+        if (specialFiles.length > 0) {
+            setZipFile(specialFiles[0]); // Solo el primero
             setSelectedFiles([]);
         } else {
             setSelectedFiles(images);
@@ -133,20 +138,27 @@ export default function BatchUploadModal({ isOpen, onClose, selectedProject }: B
                     <>
                         <div className="mb-4">
                             <label className="block text-sm font-semibold mb-2">
-                                Selecciona archivos o ZIP:
+                                Selecciona archivos o ZIP/PDF/CBR/CBZ:
                             </label>
                             <input
                                 type="file"
-                                accept="image/*,.zip"
+                                accept="image/*,.zip,.pdf,.cbr,.cbz"
                                 multiple
                                 onChange={handleFileSelect}
                                 className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                             />
+                            <p className="text-xs text-gray-500 mt-1">
+                                Soporta: Imágenes, ZIP, PDF, CBR, CBZ
+                            </p>
                         </div>
 
                         {zipFile && (
                             <div className="mb-4 p-4 bg-blue-50 rounded">
-                                <p className="font-semibold">📦 ZIP seleccionado:</p>
+                                <p className="font-semibold">
+                                    {zipFile.name.endsWith('.pdf') ? '📄 PDF' :
+                                        zipFile.name.endsWith('.cbr') ? '📚 CBR' :
+                                            zipFile.name.endsWith('.cbz') ? '📘 CBZ' : '📦 ZIP'} seleccionado:
+                                </p>
                                 <p className="text-sm text-gray-700">{zipFile.name}</p>
                                 <p className="text-xs text-gray-500">
                                     {(zipFile.size / 1024 / 1024).toFixed(2)} MB
