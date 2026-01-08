@@ -67,7 +67,18 @@ export default function BatchUploadModal({ isOpen, onClose, selectedProject }: B
                 body: formData
             });
 
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || `Server error: ${response.status}`);
+            }
+
             const data = await response.json();
+
+            // Validar que la respuesta tenga los campos esperados
+            if (!data.job_ids || !Array.isArray(data.job_ids)) {
+                console.error('[BATCH] Invalid response:', data);
+                throw new Error('Invalid response from server: missing job_ids array');
+            }
 
             setJobIds(data.job_ids);
             setProgress({ current: 0, total: data.total_pages });
@@ -77,7 +88,7 @@ export default function BatchUploadModal({ isOpen, onClose, selectedProject }: B
 
         } catch (error) {
             console.error('Batch upload failed:', error);
-            alert('Error al subir archivos');
+            alert(`Error al subir archivos: ${error.message || error}`);
             setUploading(false);
         }
     };
