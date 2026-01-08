@@ -6,6 +6,7 @@ import Dropzone from "@/components/Dropzone";
 import ImagePreview from "@/components/ImagePreview";
 import EditModal from "@/app/components/EditModal";
 import ComparisonView from "@/app/components/ComparisonView";
+import BatchUploadModal from "@/app/components/BatchUploadModal";
 
 interface UploadResponse {
   filename: string;
@@ -54,6 +55,9 @@ export default function Home() {
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [showCreateProject, setShowCreateProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
+
+  // Day 27: Batch Upload
+  const [showBatchUpload, setShowBatchUpload] = useState(false);
 
   // Fetch projects on mount
   useEffect(() => {
@@ -211,6 +215,16 @@ export default function Home() {
           <p className="text-xs text-gray-500 mt-2">
             Selecciona un proyecto para guardar esta página permanentemente
           </p>
+
+          {/* Day 27: Batch Upload Button */}
+          {selectedProject && (
+            <button
+              onClick={() => setShowBatchUpload(true)}
+              className="mt-3 w-full px-4 py-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white rounded-lg font-bold transition-all shadow-md flex items-center justify-center gap-2"
+            >
+              📦 Upload Masivo (Múltiples Imágenes o ZIP)
+            </button>
+          )}
         </section>
 
         {/* Upload Section */}
@@ -480,6 +494,13 @@ export default function Home() {
             }}
           />
         )}
+
+        {/* Day 27: Batch Upload Modal */}
+        <BatchUploadModal
+          isOpen={showBatchUpload}
+          onClose={() => setShowBatchUpload(false)}
+          selectedProject={selectedProject}
+        />
 
       </div>
     </main>
