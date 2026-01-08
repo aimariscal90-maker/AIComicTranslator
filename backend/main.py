@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional, List
 from sqlalchemy.orm import Session
-from database import get_db
+from database import get_db, SessionLocal
 from models import Project, Page, Bubble
 from services.queue_manager import JobManager
 
@@ -99,23 +99,40 @@ async def upload_image(file: UploadFile = File(...)):
 # --- BATCH PROCESSING (DAY 27) ---
 MAX_PARALLEL_WORKERS = 3  # Procesar 3 páginas simultáneamente
 
+def log_to_file(msg):
+    try:
+        with open("backend_debug.log", "a", encoding="utf-8") as f:
+            import datetime
+            ts = datetime.datetime.now().isoformat()
+            f.write(f"[{ts}] {msg}\n")
+    except:
+        pass
+
 def process_batch_task(project_id: str, batch_id: str, tasks: list):
     """
     Procesa múltiples páginas en paralelo usando ThreadPoolExecutor.
-    Día 27.5: Procesamiento paralelo para velocidad.
     """
     try:
-        print(f"[BATCH {batch_id}] INIT: Starting process_batch_task with {len(tasks)} tasks")
+        msg = f"[BATCH {batch_id}] INIT: Starting process_batch_task with {len(tasks)} tasks"
+        print(msg)
+        log_to_file(msg)
         
         from concurrent.futures import ThreadPoolExecutor, as_completed
         from threading import Lock
         
-        db = SessionLocal()
+        # Verify database connection
+        try:
+            db = SessionLocal()
+            log_to_file(f"[BATCH {batch_id}] DB Session created")
+        except Exception as e:
+            log_to_file(f"[BATCH FATAL] DB Connect failed: {e}")
+            raise
+
         total = len(tasks)
         completed_lock = Lock()
         completed_count = 0
         
-        print(f"[BATCH {batch_id}] Starting parallel processing: {total} pages with {MAX_PARALLEL_WORKERS} workers")
+        log_to_file(f"[BATCH {batch_id}] Starting parallel processing: {total} pages with {MAX_PARALLEL_WORKERS} workers")
         
         def process_single_task(task_data):
             """Wrapper para procesar una tarea individual"""
@@ -124,7 +141,7 @@ def process_batch_task(project_id: str, batch_id: str, tasks: list):
             task = task_data['task']
             
             try:
-                print(f"[BATCH {batch_id}] 🚀 Starting page {i+1}/{total}: {task['filename']}")
+                log_to_file(f"[BATCH {batch_id}] 🚀 Starting page {i+1}/{total}: {task['filename']}")
                 
                 # Procesar esta página
                 process_comic_task(
@@ -137,20 +154,24 @@ def process_batch_task(project_id: str, batch_id: str, tasks: list):
                 
                 with completed_lock:
                     completed_count += 1
-                    print(f"[BATCH {batch_id}] ✅ Page {i+1}/{total} completed ({completed_count}/{total} total)")
+                    log_to_file(f"[BATCH {batch_id}] ✅ Page {i+1}/{total} completed")
                 
                 return {'success': True, 'index': i}
                 
             except Exception as e:
-                print(f"[BATCH ERROR] ❌ Page {i+1} failed: {e}")
+                err_msg = f"[BATCH ERROR] ❌ Page {i+1} failed: {e}"
+                print(err_msg)
+                log_to_file(err_msg)
                 import traceback
                 traceback.print_exc()
+                log_to_file(traceback.format_exc())
                 return {'success': False, 'index': i, 'error': str(e)}
         
         # Preparar tareas con índices
         indexed_tasks = [{'index': i, 'task': task} for i, task in enumerate(tasks)]
         
         # Procesar en paralelo con ThreadPoolExecutor
+        log_to_file(f"[BATCH {batch_id}] submitting tasks to executor...")
         with ThreadPoolExecutor(max_workers=MAX_PARALLEL_WORKERS) as executor:
             # Submit all tasks
             futures = {executor.submit(process_single_task, task_data): task_data for task_data in indexed_tasks}
@@ -158,16 +179,18 @@ def process_batch_task(project_id: str, batch_id: str, tasks: list):
             # Wait for completion
             for future in as_completed(futures):
                 result = future.result()
-                # Result logging ya está en process_single_task
         
-        print(f"[BATCH {batch_id}] 🎉 Complete! Processed {total} pages ({completed_count} successful)")
+        log_to_file(f"[BATCH {batch_id}] 🎉 Complete! Processed {total} pages")
         
         db.close()
         
     except Exception as e:
-        print(f"[BATCH FATAL ERROR] process_batch_task crashed: {e}")
+        err_msg = f"[BATCH FATAL ERROR] process_batch_task crashed: {e}"
+        print(err_msg)
+        log_to_file(err_msg)
         import traceback
         traceback.print_exc()
+        log_to_file(traceback.format_exc())
 
 # --- ASYNC TASK LOGIC ---
 def process_comic_task(job_id: str, file_path: str, unique_filename: str, project_id: str = None, page_number: int = None):
@@ -912,8 +935,14 @@ async def upload_batch(
         else:
             raise HTTPException(status_code=400, detail="No files or zip provided")
         
-        # Procesar en background
-        background_tasks.add_task(process_batch_task, project_id, batch_id, tasks)
+        
+        # Procesar en background usando Thread directo para asegurar ejecución
+        # A veces BackgroundTasks de FastAPI puede fallar silenciosamente con pools anidados
+        from threading import Thread
+        thread = Thread(target=process_batch_task, args=(project_id, batch_id, tasks))
+        thread.start()
+        
+        print(f"[BATCH API] Thread started for batch {batch_id}")
         
         return {
             "batch_id": batch_id,
