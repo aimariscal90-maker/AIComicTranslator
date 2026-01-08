@@ -13,6 +13,10 @@ WORKDIR /app
 
 # Install python dependencies
 COPY requirements.txt .
+
+# Force CPU-only PyTorch to save massive space (remove CUDA)
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy source code
