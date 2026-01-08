@@ -42,7 +42,6 @@ export default function Home() {
 
   // Polling State (Day 17)
   const [jobId, setJobId] = useState<string | null>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState("");
@@ -51,10 +50,8 @@ export default function Home() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingBubble, setEditingBubble] = useState<{ index: number, text: string, font: string } | null>(null);
 
-  // Day 23: Project Selection
   const [projects, setProjects] = useState<any[]>([]);
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
-  const [showCreateProject, setShowCreateProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
 
   // Day 27: Batch Upload
