@@ -89,7 +89,7 @@ export default function BatchUploadModal({ isOpen, onClose, selectedProject }: B
 
         } catch (error) {
             console.error('Batch upload failed:', error);
-            alert(`Error al subir archivos: ${error.message || error}`);
+            alert(`Error al subir archivos: ${(error as any).message || String(error)}`);
             setUploading(false);
         }
     };
