@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { API_URL } from "@/config";
 
 interface BatchUploadModalProps {
     isOpen: boolean;
@@ -62,7 +63,7 @@ export default function BatchUploadModal({ isOpen, onClose, selectedProject }: B
                 });
             }
 
-            const response = await fetch(`http://localhost:8000/projects/${selectedProject}/upload-batch`, {
+            const response = await fetch(`${API_URL}/projects/${selectedProject}/upload-batch`, {
                 method: 'POST',
                 body: formData
             });
@@ -99,7 +100,7 @@ export default function BatchUploadModal({ isOpen, onClose, selectedProject }: B
 
             for (const jobId of jobIds) {
                 try {
-                    const response = await fetch(`http://localhost:8000/jobs/${jobId}`);
+                    const response = await fetch(`${API_URL}/jobs/${jobId}`);
                     const job = await response.json();
 
                     if (job.status === 'completed' || job.progress === 100) {

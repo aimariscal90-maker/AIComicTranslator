@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { API_URL } from "@/config";
 
 interface Project {
     id: string;
@@ -24,7 +25,7 @@ export default function DashboardPage() {
 
     const fetchProjects = async () => {
         try {
-            const res = await fetch("http://localhost:8000/projects");
+            const res = await fetch(`${API_URL}/projects`);
             if (res.ok) {
                 const data = await res.json();
                 setProjects(data);
@@ -38,7 +39,7 @@ export default function DashboardPage() {
 
     const createProject = async () => {
         try {
-            const res = await fetch("http://localhost:8000/projects", {
+            const res = await fetch(`${API_URL}/projects`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -64,7 +65,7 @@ export default function DashboardPage() {
         }
 
         try {
-            const res = await fetch(`http://localhost:8000/projects/${projectId}`, {
+            const res = await fetch(`${API_URL}/projects/${projectId}`, {
                 method: "DELETE",
             });
 
