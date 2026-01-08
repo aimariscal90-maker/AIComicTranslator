@@ -45,8 +45,8 @@ export default function Home() {
   const [isUploading, setIsUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState("");
-  const [apiResponse, setApiResponse] = useState<any>(null);
-  const [viewMode, setViewMode] = useState<"before-after" | "debug">("before-after");
+  const [apiResponse, setApiResponse] = useState<ApiResponse | null>(null);
+  const [viewMode, setViewMode] = useState<"split" | "compare">("split");
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingBubble, setEditingBubble] = useState<{ index: number, text: string, font: string } | null>(null);
 
@@ -224,6 +224,26 @@ export default function Home() {
             >
               📦 Upload Masivo (Múltiples Imágenes o ZIP)
             </button>
+          )}
+
+          {/* Day 28: Export Buttons */}
+          {selectedProject && (
+            <div className="mt-4 flex gap-2">
+              <a
+                href={`http://localhost:8000/projects/${selectedProject}/export?format=pdf`}
+                download
+                className="flex-1 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-lg font-bold text-center shadow-sm transition-colors flex items-center justify-center gap-2"
+              >
+                📄 Descargar PDF
+              </a>
+              <a
+                href={`http://localhost:8000/projects/${selectedProject}/export?format=cbz`}
+                download
+                className="flex-1 px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg font-bold text-center shadow-sm transition-colors flex items-center justify-center gap-2"
+              >
+                📚 Descargar CBZ
+              </a>
+            </div>
           )}
         </section>
 
