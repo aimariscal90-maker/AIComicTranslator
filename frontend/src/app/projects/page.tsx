@@ -1,23 +1,83 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import ProjectCard from "@/app/components/projects/ProjectCard";
-import { Filter, FolderPlus, Search } from "lucide-react";
-
-// Mock Data
-const MOCK_PROJECTS = [
-    { id: "1", title: "One Piece Ch. 1100", cover: "https://placehold.co/400x600/222/FFF/png?text=OP+1100", pages: 19, status: "completed", date: "2h ago" },
-    { id: "2", title: "Jujutsu Kaisen Ch. 248", cover: "https://placehold.co/400x600/333/FFF/png?text=JJK+248", pages: 21, status: "processing", date: "5m ago" },
-    { id: "3", title: "Chainsaw Man Ch. 155", cover: "https://placehold.co/400x600/444/FFF/png?text=CSM+155", pages: 18, status: "draft", date: "1d ago" },
-    { id: "4", title: "Kagurabachi Vol 1", cover: "https://placehold.co/400x600/222/FFF/png?text=Kagura", pages: 45, status: "completed", date: "3d ago" },
-    { id: "5", title: "Dandadan Ch. 140", cover: "https://placehold.co/400x600/555/FFF/png?text=Dandan", pages: 22, status: "draft", date: "1w ago" },
-];
+import { Filter, FolderPlus, Search, Loader2 } from "lucide-react";
+import api from "@/services/api";
+import { Project } from "@/types/api"; // Ensure this type exists
+import { API_URL } from "@/config";
+import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 
 export default function ProjectsPage() {
+    const [projects, setProjects] = useState<Project[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [filter, setFilter] = useState("all");
+    const [searchTerm, setSearchTerm] = useState("");
+    const router = useRouter();
 
-    // @ts-ignore
-    const filteredProjects = MOCK_PROJECTS.filter(p => filter === 'all' || p.status === filter);
+    useEffect(() => {
+        fetchProjects();
+    }, []);
+
+    const fetchProjects = async () => {
+        try {
+            const { data } = await api.get<Project[]>('/projects');
+            setProjects(data);
+        } catch (err) {
+            toast.error("Failed to load projects");
+            console.error(err);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleCreateProject = async () => {
+        // Simple prompt for MVP (Can be modal later)
+        const name = prompt("Enter project name:"); // Temporary UX
+        if (!name) return;
+
+        try {
+            const { data } = await api.post<Project>('/projects', { name });
+            toast.success("Project created!");
+            setProjects([data, ...projects]);
+            router.push(`/projects/${data.id}`); // Go to detail
+        } catch (err) {
+            toast.error("Failed to create project");
+        }
+    };
+
+    const getProjectCover = (project: Project) => {
+        if (project.pages && project.pages.length > 0) {
+            const firstPage = project.pages[0];
+            const url = firstPage.final_url || firstPage.original_url || "";
+            if (url.startsWith("/")) return `${API_URL}${url}`;
+            return url;
+        }
+        return `https://placehold.co/400x600/1e293b/475569/png?text=${encodeURIComponent(project.name)}`;
+    };
+
+    const getStatus = (project: Project): "completed" | "processing" | "draft" => {
+        if (!project.pages || project.pages.length === 0) return "draft";
+        const allCompleted = project.pages.every((p: any) => p.status === 'completed');
+        if (allCompleted) return "completed";
+        return "processing";
+    };
+
+    const filteredProjects = projects.filter(p => {
+        const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
+        const status = getStatus(p);
+        const matchesFilter = filter === 'all' || status === filter;
+        return matchesSearch && matchesFilter;
+    });
+
+    if (isLoading) {
+        return (
+            <div className="flex h-[calc(100vh-6rem)] items-center justify-center">
+                <Loader2 className="w-10 h-10 animate-spin text-indigo-500" />
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-8">
@@ -34,10 +94,15 @@ export default function ProjectsPage() {
                         <input
                             type="text"
                             placeholder="Search projects..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
                             className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:ring-1 focus:ring-indigo-500 outline-none"
                         />
                     </div>
-                    <button className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 whitespace-nowrap">
+                    <button
+                        onClick={handleCreateProject}
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 whitespace-nowrap shadow-lg shadow-indigo-500/20"
+                    >
                         <FolderPlus className="w-4 h-4" />
                         New Project
                     </button>
@@ -46,48 +111,32 @@ export default function ProjectsPage() {
 
             {/* Filters */}
             <div className="flex items-center gap-2 overflow-x-auto pb-2">
-                <button
-                    onClick={() => setFilter('all')}
-                    className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${filter === 'all' ? 'bg-white text-slate-900' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
-                >
-                    All Projects
-                </button>
-                <button
-                    onClick={() => setFilter('processing')}
-                    className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${filter === 'processing' ? 'bg-indigo-500 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
-                >
-                    In Progress
-                </button>
-                <button
-                    onClick={() => setFilter('completed')}
-                    className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${filter === 'completed' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
-                >
-                    Completed
-                </button>
-                <button
-                    onClick={() => setFilter('draft')}
-                    className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${filter === 'draft' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
-                >
-                    Drafts
-                </button>
+                <button onClick={() => setFilter('all')} className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${filter === 'all' ? 'bg-white text-slate-900' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>All Projects</button>
+                <button onClick={() => setFilter('processing')} className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${filter === 'processing' ? 'bg-indigo-500 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>In Progress</button>
+                <button onClick={() => setFilter('completed')} className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${filter === 'completed' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>Completed</button>
+                <button onClick={() => setFilter('draft')} className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${filter === 'draft' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>Drafts</button>
             </div>
 
             {/* Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-                {filteredProjects.map((project) => (
-                    // @ts-ignore
-                    <ProjectCard
-                        key={project.id}
-                        id={project.id}
-                        title={project.title}
-                        coverUrl={project.cover}
-                        pageCount={project.pages}
-                        // @ts-ignore
-                        status={project.status}
-                        lastEdited={project.date}
-                    />
-                ))}
-            </div>
+            {filteredProjects.length === 0 ? (
+                <div className="text-center py-20 text-slate-500 border border-dashed border-slate-800 rounded-xl">
+                    <p>No projects found. Create one to get started!</p>
+                </div>
+            ) : (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+                    {filteredProjects.map((project) => (
+                        <ProjectCard
+                            key={project.id}
+                            id={project.id}
+                            title={project.name}
+                            coverUrl={getProjectCover(project)}
+                            pageCount={project.pages ? project.pages.length : 0}
+                            status={getStatus(project)}
+                            lastEdited={new Date(project.created_at || Date.now()).toLocaleDateString()}
+                        />
+                    ))}
+                </div>
+            )}
         </div>
     );
 }
