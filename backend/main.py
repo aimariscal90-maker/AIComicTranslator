@@ -13,6 +13,20 @@ from database import get_db, SessionLocal
 from models import Project, Page, Bubble
 from services.queue_manager import JobManager
 
+# Pre-import AI Services to warm up models and prevent thread locks
+print("[BOOT] Pre-loading AI Services...")
+try:
+    from services.detector import BubbleDetector
+    from services.inpainting import TextRemover
+    from services.ocr import OCRService
+    from services.translator import TranslatorService
+    from services.renderer import TextRenderer
+    print("[BOOT] AI Services loaded successfully.")
+except Exception as e:
+    print(f"[BOOT ERROR] Failed to load one or more services: {e}")
+    # We continue, assuming they might work later or user needs to fix env
+
+
 app = FastAPI(title="AI Comic Translator API", version="0.1.0")
 job_manager = JobManager()
 
@@ -209,12 +223,12 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
     try:
         job_manager.update_job(job_id, status="processing", progress=10, step="Iniciando Modelos AI...")
         
-        # Lazy imports para evitar errores si las dependencias aun se instalan
-        from services.detector import BubbleDetector
-        from services.inpainting import TextRemover
-        from services.ocr import OCRService
-        from services.translator import TranslatorService
-        from services.renderer import TextRenderer
+        # Lazy imports removed - utilizing global imports
+        # from services.detector import BubbleDetector
+        # from services.inpainting import TextRemover
+        # from services.ocr import OCRService
+        # from services.translator import TranslatorService
+        # from services.renderer import TextRenderer
         import cv2
         import numpy as np
 

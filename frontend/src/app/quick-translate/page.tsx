@@ -1,67 +1,92 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useCallback } from "react";
 import PipelineStepper from "@/app/components/translate/PipelineStepper";
 import DualPanelView from "@/app/components/translate/DualPanelView";
 import SmartDropzone from "@/app/components/upload/SmartDropzone";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Download, AlertCircle, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
+import api from "@/services/api";
+import { usePolling } from "@/hooks/usePolling";
+import { API_URL } from "@/config";
+import { Job } from "@/types/api";
 
 export default function QuickTranslatePage() {
-    // Mock State for Demo
     const [file, setFile] = useState<File | null>(null);
-    const [status, setStatus] = useState("idle"); // idle, processing, completed
-    const [currentStep, setCurrentStep] = useState("idle");
+    const [currentStepId, setCurrentStepId] = useState("idle");
+    const [originalUrl, setOriginalUrl] = useState<string | null>(null);
+    const [resultUrl, setResultUrl] = useState<string | null>(null);
 
-    // Simulation Loop
-    useEffect(() => {
-        if (status === 'processing') {
-            const sequence = [
-                { id: "upload", delay: 1000 },
-                { id: "detect", delay: 2500 },
-                { id: "ocr", delay: 4000 },
-                { id: "translate", delay: 5500 },
-                { id: "render", delay: 7000 },
-                { id: "completed", delay: 8000 },
-            ];
-
-            let timeouts: NodeJS.Timeout[] = [];
-
-            // Initial Toast
-            toast.message("Starting Pipeline", {
-                description: `Processing ${file?.name || "image"}...`,
+    // Polling Hook
+    const { startPolling, stopPolling, isPolling, job, error } = usePolling({
+        onProgress: (updatedJob) => {
+            // Map percentage to Visual Steps for Stepper
+            const p = updatedJob.progress;
+            if (p < 20) setCurrentStepId("upload");
+            else if (p < 40) setCurrentStepId("detect");
+            else if (p < 50) setCurrentStepId("ocr");
+            else if (p < 70) setCurrentStepId("translate");
+            else if (p < 100) setCurrentStepId("render");
+            else setCurrentStepId("completed");
+        },
+        onComplete: (completedJob) => {
+            setCurrentStepId("completed");
+            if (completedJob.result?.final_url) {
+                setResultUrl(getFullUrl(completedJob.result.final_url));
+            }
+            toast.success("Translation Complete!", {
+                description: "Your page is ready.",
+                duration: 5000,
             });
-
-            sequence.forEach(({ id, delay }) => {
-                const t = setTimeout(() => {
-                    setCurrentStep(id);
-                    if (id === 'completed') {
-                        setStatus('completed');
-                        toast.success("Translation Complete!", {
-                            description: "Your page is ready for download.",
-                            duration: 5000,
-                        });
-                    }
-                }, delay);
-                timeouts.push(t);
-            });
-
-            return () => timeouts.forEach(clearTimeout);
+        },
+        onFail: (errMsg) => {
+            setCurrentStepId("failed");
+            toast.error("Processing Failed", { description: errMsg });
         }
-    }, [status, file?.name]);
+    });
 
-    const handleFileSelect = (uploadedFile: File) => {
+    const getFullUrl = (path: string) => {
+        if (path.startsWith('http')) return path;
+        // Remove leading slash if needed
+        const cleanPath = path.startsWith('/') ? path.substring(1) : path;
+        return `${API_URL}/${cleanPath}`;
+    };
+
+    const handleFileSelect = async (uploadedFile: File) => {
         setFile(uploadedFile);
-        setStatus("processing");
-        setCurrentStep("upload");
-        toast.success("File Uploaded");
+        setCurrentStepId("upload");
+        setOriginalUrl(URL.createObjectURL(uploadedFile)); // Preview local immediately
+        setResultUrl(null);
+
+        const formData = new FormData();
+        formData.append('file', uploadedFile);
+
+        try {
+            toast.message("Uploading...", { description: "Sending file to secure server." });
+            const { data } = await api.post<{ job_id: string }>('/process', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+
+            toast.message("Processing Started", { description: "AI Pipeline active." });
+            startPolling(data.job_id);
+
+        } catch (err: any) {
+            console.error(err);
+            toast.error("Upload Failed", {
+                description: err.response?.data?.detail || "Network error"
+            });
+            setCurrentStepId("idle");
+            setFile(null);
+        }
     };
 
     const resetPipeline = () => {
-        setStatus('idle');
+        stopPolling();
         setFile(null);
-        setCurrentStep('idle');
+        setCurrentStepId("idle");
+        setOriginalUrl(null);
+        setResultUrl(null);
     };
 
     return (
@@ -73,46 +98,75 @@ export default function QuickTranslatePage() {
                     <Link href="/" className="p-2 hover:bg-slate-800 rounded-full transition-colors text-slate-400 hover:text-white">
                         <ArrowLeft className="w-5 h-5" />
                     </Link>
-                    <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-                        <span className="text-indigo-400">⚡</span> Quick Translate Pipeline
-                    </h1>
+                    <div>
+                        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+                            <span className="text-indigo-400">⚡</span> Quick Translate Pipeline
+                        </h1>
+                        {isPolling && job && (
+                            <p className="text-xs text-indigo-400 animate-pulse font-mono">
+                                Step: {job.step} ({job.progress}%)
+                            </p>
+                        )}
+                    </div>
                 </div>
 
-                {status === 'completed' && (
-                    <button
-                        onClick={resetPipeline}
-                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-bold shadow-sm transition-colors"
-                    >
-                        New Scan
-                    </button>
+                {currentStepId === 'completed' && resultUrl && (
+                    <div className="flex gap-2">
+                        <button
+                            onClick={resetPipeline}
+                            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-bold shadow-sm transition-colors flex items-center gap-2"
+                        >
+                            <RefreshCw className="w-4 h-4" /> New Scan
+                        </button>
+
+                        <a
+                            href={resultUrl}
+                            download
+                            target="_blank"
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-bold shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-2"
+                        >
+                            <Download className="w-4 h-4" /> Download Result
+                        </a>
+                    </div>
                 )}
             </div>
 
+            {/* Error Banner */}
+            {error && (
+                <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-4 flex items-center gap-3 text-red-400">
+                    <AlertCircle className="w-5 h-5" />
+                    <div>
+                        <p className="font-bold">Processing Error</p>
+                        <p className="text-sm">{error}</p>
+                    </div>
+                </div>
+            )}
+
             {/* Main Content Area */}
-            {status === 'idle' ? (
+            {!file ? (
                 // State: Upload (Empty)
-                <div className="flex-1 flex items-center justify-center p-12">
+                <div className="flex-1 flex items-center justify-center p-12 animate-in fade-in zoom-in-95 duration-500">
                     <div className="w-full max-w-2xl h-80">
                         <SmartDropzone onFileSelect={handleFileSelect} />
                     </div>
                 </div>
             ) : (
                 // State: Processing / Result
-                <div className="flex-1 flex gap-6 min-h-0 animate-in fade-in zoom-in-95 duration-300">
+                <div className="flex-1 flex gap-6 min-h-0 animate-in fade-in slide-in-from-bottom-4 duration-500">
                     {/* Left: Pipeline Status (Sticky) */}
-                    <div className="w-72 shrink-0 bg-slate-900/50 p-6 rounded-xl border border-slate-800/50 backdrop-blur-sm">
-                        <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-6 border-b border-slate-800 pb-2">
+                    <div className="w-72 shrink-0 bg-slate-900/40 p-6 rounded-xl border border-white/5 backdrop-blur-sm h-fit">
+                        <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-6 border-b border-white/5 pb-2">
                             Pipeline Status
                         </h2>
-                        <PipelineStepper currentStepId={currentStep} />
+                        <PipelineStepper currentStepId={currentStepId} />
                     </div>
 
                     {/* Right: Dual View */}
                     <div className="flex-1 min-w-0">
                         <DualPanelView
-                            originalSrc={file ? "https://placehold.co/800x1200/222/FFF/png?text=Input" : null}
-                            resultSrc={status === 'completed' ? "https://placehold.co/800x1200/222/818cf8/png?text=Translated+Result" : null}
-                            isProcessing={status === 'processing'}
+                            originalSrc={originalUrl}
+                            resultSrc={resultUrl}
+                            isProcessing={isPolling}
                         />
                     </div>
                 </div>
