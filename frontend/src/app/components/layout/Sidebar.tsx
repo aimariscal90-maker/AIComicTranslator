@@ -15,7 +15,7 @@ import {
 import { cn } from "@/lib/utils";
 
 const menuItems = [
-    { icon: LayoutGrid, label: "Dashboard", href: "/dashboard" },
+    { icon: LayoutGrid, label: "Dashboard", href: "/" },
     { icon: Zap, label: "Quick Translate", href: "/quick-translate" },
     { icon: Sparkles, label: "Magic Cleaner", href: "/cleaner" },
     { icon: GalleryVerticalEnd, label: "Projects", href: "/projects" },
