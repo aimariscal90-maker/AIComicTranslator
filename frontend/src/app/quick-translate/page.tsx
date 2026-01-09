@@ -6,6 +6,7 @@ import DualPanelView from "@/app/components/translate/DualPanelView";
 import SmartDropzone from "@/app/components/upload/SmartDropzone";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
+import { toast } from "sonner";
 
 export default function QuickTranslatePage() {
     // Mock State for Demo
@@ -27,22 +28,34 @@ export default function QuickTranslatePage() {
 
             let timeouts: NodeJS.Timeout[] = [];
 
+            // Initial Toast
+            toast.message("Starting Pipeline", {
+                description: `Processing ${file?.name || "image"}...`,
+            });
+
             sequence.forEach(({ id, delay }) => {
                 const t = setTimeout(() => {
                     setCurrentStep(id);
-                    if (id === 'completed') setStatus('completed');
+                    if (id === 'completed') {
+                        setStatus('completed');
+                        toast.success("Translation Complete!", {
+                            description: "Your page is ready for download.",
+                            duration: 5000,
+                        });
+                    }
                 }, delay);
                 timeouts.push(t);
             });
 
             return () => timeouts.forEach(clearTimeout);
         }
-    }, [status]);
+    }, [status, file?.name]);
 
     const handleFileSelect = (uploadedFile: File) => {
         setFile(uploadedFile);
         setStatus("processing");
         setCurrentStep("upload");
+        toast.success("File Uploaded");
     };
 
     const resetPipeline = () => {
