@@ -30,7 +30,7 @@ class TextRemover:
             print(f"Error loading LaMa model: {e}")
             self.model = None
 
-    def remove_text(self, image_path, bboxes, output_path, mask_mode='bubble'):
+    def remove_text(self, image_path, bboxes, output_path, mask_mode='bubble', fast_mode=False):
         """
         Borra el texto de la imagen.
         mask_mode='bubble': Borra todo el poligono del globo.
@@ -78,6 +78,22 @@ class TextRemover:
              
         kernel = np.ones((MASK_PADDING, MASK_PADDING), np.uint8) 
         mask = cv2.dilate(mask, kernel, iterations=iter_dil)
+        
+        # --- OPTIMIZATION 3: FAST MODE (OpenCV Telea) ---
+        if fast_mode:
+            print("[INPAINTING] Fast Mode enabled (OpenCV Telea)")
+            try:
+                # cv2.inpaint requires uint8 mask
+                mask_8u = (mask * 255).astype(np.uint8)
+                # Radius 3 is a good balance
+                inpainted = cv2.inpaint(img, mask_8u, 3, cv2.INPAINT_TELEA)
+                
+                result_bgr = cv2.cvtColor(inpainted, cv2.COLOR_RGB2BGR)
+                cv2.imwrite(output_path, result_bgr)
+                return output_path
+            except Exception as e:
+                print(f"[INPAINTING] Fast mode failed: {e}. Falling back to LaMa.")
+        # ------------------------------------------------
         
         # 2. Preprocesar para LaMa
         # Resize a multiplo de 8 

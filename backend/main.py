@@ -416,7 +416,7 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
                 bubble['translation_provider'] = "None"
         
         # 4. Inpainting
-        job_manager.update_job(job_id, progress=70, step="Borrando Texto Original 🎨")
+        job_manager.update_job(job_id, progress=70, step="Borrando Texto (Fast Mode) 🎨")
         
         debug_filename = f"debug_{unique_filename}"
         debug_path = os.path.join(UPLOAD_DIR, debug_filename)
@@ -426,7 +426,9 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
         clean_text_filename = f"clean_text_{unique_filename}"
         clean_text_path = os.path.join(UPLOAD_DIR, clean_text_filename)
         clean_bubble_filename = None
-        remover.remove_text(file_path, bboxes=bubbles, output_path=clean_text_path, mask_mode='text')
+        
+        # FORCE FAST MODE for performance (CPU friendly)
+        remover.remove_text(file_path, bboxes=bubbles, output_path=clean_text_path, mask_mode='text', fast_mode=True)
         
         # 5. Text Rendering (El Gran Final)
         job_manager.update_job(job_id, progress=90, step="Renderizando Español ✍️")
