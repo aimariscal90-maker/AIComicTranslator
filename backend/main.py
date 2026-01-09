@@ -798,6 +798,72 @@ def delete_project(project_id: str, db: Session = Depends(get_db)):
 @app.get("/process/{filename}/download-final")
 async def download_final_image(filename: str):
     """
+    
+# --- PROJECT EXPORT (DAY 28 & 30) ---
+@app.get("/projects/{project_id}/export")
+async def export_project(project_id: str, format: str = "cbz", db: Session = Depends(get_db)):
+    """
+    Exporta todo el proyecto como un archivo CBZ, ZIP o PDF.
+    """
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    pages = db.query(Page).filter(Page.project_id == project_id).order_by(Page.page_number).all()
+    if not pages:
+        raise HTTPException(status_code=400, detail="Project has no pages")
+
+    try:
+        # Preparar nombre y path temporal
+        safe_name = "".join([c for c in project.name if c.isalnum() or c in (' ', '-', '_')]).strip().replace(' ', '_')
+        export_filename = f"{safe_name}.{format}"
+        zip_path = os.path.join(UPLOAD_DIR, export_filename)
+
+        # Recopilar archivos
+        files_to_pack = []
+        for i, page in enumerate(pages):
+            # Preferir imagen final, luego clean, luego original
+            source_url = page.final_url or page.clean_url or page.original_url
+            if source_url:
+                local_filename = source_url.split("/")[-1] # /uploads/filename.jpg -> filename.jpg
+                local_path = os.path.join(UPLOAD_DIR, local_filename)
+                
+                if os.path.exists(local_path):
+                    # Extensión original
+                    ext = local_filename.split(".")[-1]
+                    # Nombre secuencial: 001.jpg
+                    archive_name = f"{i+1:03d}.{ext}"
+                    files_to_pack.append((local_path, archive_name))
+        
+        if not files_to_pack:
+             raise HTTPException(status_code=404, detail="No valid images found to export")
+
+        # Crear archivo (CBZ/ZIP son lo mismo)
+        if format in ['cbz', 'zip']:
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for disk_path, arc_name in files_to_pack:
+                    zipf.write(disk_path, arcname=arc_name)
+            
+            media_type = 'application/vnd.comicbook+zip' if format == 'cbz' else 'application/zip'
+            
+        elif format == 'pdf':
+             # TODO: Implement PDF export using img2pdf if requested
+             # Fallback to ZIP for now or implement if dependency exists
+             pass
+
+        return FileResponse(
+            zip_path, 
+            media_type=media_type, 
+            filename=export_filename,
+            headers={"Content-Disposition": f"attachment; filename={export_filename}"}
+        )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+
+# --- BATCH UPLOAD ENDPOINT (DAY 27) ---
     Descarga directa de la imagen final traducida (Forzando attachment).
     """
     try:

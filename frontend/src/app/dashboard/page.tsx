@@ -147,18 +147,29 @@ export default function DashboardPage() {
                                 </div>
 
                                 <div className="flex gap-2">
-                                    <Link
-                                        href={`/project/${project.id}`}
-                                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold text-center transition-colors"
-                                    >
-                                        Ver Proyecto
-                                    </Link>
-                                    <button
-                                        onClick={() => deleteProject(project.id)}
-                                        className="bg-red-100 hover:bg-red-200 text-red-700 px-4 py-2 rounded-lg text-sm font-bold transition-colors"
-                                    >
-                                        🗑️
-                                    </button>
+                                    <div className="flex gap-2">
+                                        <Link
+                                            href={`/?project_id=${project.id}`}
+                                            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-bold text-center transition-colors"
+                                        >
+                                            Ver
+                                        </Link>
+                                        <a
+                                            href={`${API_URL}/projects/${project.id}/export?format=cbz`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg text-sm font-bold text-center transition-colors flex items-center justify-center"
+                                            title="Descargar CBZ"
+                                        >
+                                            ⬇️
+                                        </a>
+                                        <button
+                                            onClick={() => deleteProject(project.id)}
+                                            className="bg-red-100 hover:bg-red-200 text-red-700 px-3 py-2 rounded-lg text-sm font-bold transition-colors"
+                                        >
+                                            🗑️
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         ))}
