@@ -10,7 +10,8 @@ import {
     GalleryVerticalEnd,
     Settings,
     LogOut,
-    FlaskConical
+    FlaskConical,
+    Wrench
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +20,7 @@ const menuItems = [
     { icon: Zap, label: "Quick Translate", href: "/quick-translate" },
     { icon: Sparkles, label: "Magic Cleaner", href: "/cleaner" },
     { icon: GalleryVerticalEnd, label: "Projects", href: "/projects" },
+    { icon: Wrench, label: "Tools", href: "/tools" },
     { icon: FlaskConical, label: "Lab (Tests)", href: "/tests" },
 ];
 

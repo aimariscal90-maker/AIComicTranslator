@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import api from "@/services/api";
 import { Project, ComicPage } from "@/types/api";
 import { toast } from "sonner";
-import { Loader2, Plus, ArrowLeft, Image as ImageIcon } from "lucide-react";
+import { Loader2, Plus, ArrowLeft, Image as ImageIcon, Download } from "lucide-react";
 import Link from "next/link";
 import { API_URL } from "@/config";
 import SmartDropzone from "@/app/components/upload/SmartDropzone";
@@ -71,7 +71,24 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                     <h1 className="text-3xl font-bold text-white">{project.name}</h1>
                     <p className="text-slate-400">{project.description || "No description"} • {project.pages?.length || 0} Pages</p>
                 </div>
-                <div className="ml-auto">
+                <div className="ml-auto flex gap-4">
+                    <div className="flex bg-slate-800 rounded-lg p-1 h-fit my-auto">
+                        <a
+                            href={`${API_URL}/projects/${id}/export?format=cbz`}
+                            target="_blank"
+                            className="px-3 py-1.5 hover:bg-slate-700 rounded text-xs font-bold text-white transition-colors flex items-center gap-1"
+                        >
+                            <Download className="w-3 h-3" /> CBZ
+                        </a>
+                        <div className="w-[1px] bg-white/10 my-1"></div>
+                        <a
+                            href={`${API_URL}/projects/${id}/export?format=zip`}
+                            target="_blank"
+                            className="px-3 py-1.5 hover:bg-slate-700 rounded text-xs font-bold text-white transition-colors flex items-center gap-1"
+                        >
+                            ZIP
+                        </a>
+                    </div>
                     <button className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shadow-lg">
                         <Plus className="w-4 h-4" /> Add Page
                     </button>

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
@@ -7,11 +8,13 @@ import {
   Sparkles,
   GalleryVerticalEnd,
   ArrowRight,
-  Clock,
   Plus,
   FileImage,
-  TrendingUp
+  TrendingUp,
+  Loader2
 } from "lucide-react";
+import api from "@/services/api";
+import { Project } from "@/types/api";
 
 // Animation Variants
 const container = {
@@ -32,6 +35,23 @@ const item = {
 };
 
 export default function Dashboard() {
+  const [recentProjects, setRecentProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchRecent = async () => {
+      try {
+        const { data } = await api.get<Project[]>('/projects');
+        setRecentProjects(data.slice(0, 3));
+      } catch (err) {
+        console.error("Failed to fetch dashboard data", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchRecent();
+  }, []);
+
   return (
     <div className="space-y-10 max-w-7xl mx-auto relative z-10">
       {/* Ambient Background Glows */}
@@ -53,14 +73,16 @@ export default function Dashboard() {
           </p>
         </div>
 
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full text-sm font-bold shadow-lg shadow-indigo-500/25 flex items-center gap-2 transition-all"
-        >
-          <Plus className="w-5 h-5" />
-          New Project
-        </motion.button>
+        <Link href="/projects">
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full text-sm font-bold shadow-lg shadow-indigo-500/25 flex items-center gap-2 transition-all"
+          >
+            <Plus className="w-5 h-5" />
+            New Project
+          </motion.button>
+        </Link>
       </header>
 
       {/* Bento Grid layout */}
@@ -106,17 +128,17 @@ export default function Dashboard() {
                 <TrendingUp className="w-5 h-5 text-emerald-400" />
                 Activity
               </h3>
-              <span className="text-xs text-emerald-400 font-mono bg-emerald-500/10 px-2 py-1 rounded-full">+12%</span>
+              <span className="text-xs text-emerald-400 font-mono bg-emerald-500/10 px-2 py-1 rounded-full">Live</span>
             </div>
             <div className="h-24 flex items-end gap-1">
-              {/* Fake Chart */}
+              {/* Fake Chart for Animation */}
               {[40, 60, 30, 80, 50, 90, 60].map((h, i) => (
                 <div key={i} className="flex-1 bg-slate-700/50 hover:bg-indigo-500 rounded-t-sm transition-colors" style={{ height: `${h}%` }} />
               ))}
             </div>
           </div>
           <p className="text-xs text-slate-400 mt-4">
-            You processed 148 pages this week.
+            System operational.
           </p>
         </motion.div>
 
@@ -128,10 +150,10 @@ export default function Dashboard() {
             </div>
             <h3 className="text-xl font-bold text-white mb-2">Magic Cleaner</h3>
             <p className="text-slate-400 mb-6">
-              Precision tools for manual cleanup and inpainting verification.
+              Precision tools for manual cleanup and inpainting verification. Access via Projects.
             </p>
-            <Link href="/cleaner" className="text-emerald-400 font-bold hover:text-emerald-300 flex items-center gap-2 group-hover:gap-3 transition-all">
-              Open Workspace <ArrowRight className="w-4 h-4" />
+            <Link href="/projects" className="text-emerald-400 font-bold hover:text-emerald-300 flex items-center gap-2 group-hover:gap-3 transition-all">
+              Go to Projects <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
         </motion.div>
@@ -147,29 +169,34 @@ export default function Dashboard() {
           </div>
 
           <div className="space-y-3">
-            {[
-              { title: "One Piece Ch. 1100", time: "25m ago", status: "Processing" },
-              { title: "Jujutsu Kaisen Ch. 248", time: "2h ago", status: "Done" },
-              { title: "Kagurabachi Vol. 3", time: "1d ago", status: "Draft" }
-            ].map((project, i) => (
-              <div key={i} className="flex items-center justify-between p-3 rounded-2xl hover:bg-white/5 transition-colors group cursor-pointer">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-slate-800 flex items-center justify-center text-slate-500 group-hover:text-white transition-colors">
-                    <FileImage className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-slate-200 group-hover:text-white">{project.title}</h4>
-                    <p className="text-xs text-slate-500">{project.time}</p>
-                  </div>
-                </div>
-                <div className={`px-3 py-1 rounded-full text-xs font-bold ${project.status === 'Done' ? 'bg-emerald-500/10 text-emerald-400' :
-                    project.status === 'Processing' ? 'bg-indigo-500/10 text-indigo-400' :
-                      'bg-slate-700/30 text-slate-400'
-                  }`}>
-                  {project.status}
-                </div>
+            {loading ? (
+              <div className="py-4 text-center">
+                <Loader2 className="w-6 h-6 animate-spin text-slate-600 mx-auto" />
               </div>
-            ))}
+            ) : recentProjects.length === 0 ? (
+              <div className="text-slate-500 text-sm py-4 text-center">
+                No projects yet. Create one above!
+              </div>
+            ) : (
+              recentProjects.map((project, i) => (
+                <Link href={`/projects/${project.id}`} key={i} className="flex items-center justify-between p-3 rounded-2xl hover:bg-white/5 transition-colors group cursor-pointer">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-slate-800 flex items-center justify-center text-slate-500 group-hover:text-white transition-colors">
+                      <FileImage className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-200 group-hover:text-white">{project.name}</h4>
+                      <p className="text-xs text-slate-500 flex items-center gap-2">
+                        {new Date(project.created_at || Date.now()).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="px-3 py-1 rounded-full text-xs font-bold bg-slate-700/30 text-slate-400">
+                    {project.pages?.length || 0} Pages
+                  </div>
+                </Link>
+              ))
+            )}
           </div>
         </motion.div>
       </motion.div>
@@ -177,7 +204,7 @@ export default function Dashboard() {
       {/* Footer Links */}
       <motion.div variants={item} className="flex justify-center pt-6 opacity-30 hover:opacity-100 transition-opacity">
         <Link href="/legacy-playground" className="text-xs text-white">
-          Legacy Playground
+          Legacy Playground (Debug)
         </Link>
       </motion.div>
     </div>

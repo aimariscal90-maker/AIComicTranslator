@@ -1070,3 +1070,48 @@ async def upload_batch(
         raise HTTPException(status_code=500, detail=f"Batch upload failed: {str(e)}")
 
 
+ 
+ @ a p p . g e t ( " / p r o j e c t s / { p r o j e c t _ i d } / e x p o r t " )  
+ d e f   e x p o r t _ p r o j e c t ( p r o j e c t _ i d :   s t r ,   f o r m a t :   s t r   =   " c b z " ,   d b :   S e s s i o n   =   D e p e n d s ( g e t _ d b ) ) :  
+         " " "  
+         E x p o r t a   t o d o   e l   p r o y e c t o   c o m o   u n   a r c h i v o   C B Z   o   Z I P .  
+         " " "  
+         p r o j e c t   =   d b . q u e r y ( P r o j e c t ) . f i l t e r ( P r o j e c t . i d   = =   p r o j e c t _ i d ) . f i r s t ( )  
+         i f   n o t   p r o j e c t :  
+                 r a i s e   H T T P E x c e p t i o n ( s t a t u s _ c o d e = 4 0 4 ,   d e t a i l = " P r o j e c t   n o t   f o u n d " )  
+                  
+         p a g e s   =   d b . q u e r y ( P a g e ) . f i l t e r ( P a g e . p r o j e c t _ i d   = =   p r o j e c t _ i d ) . o r d e r _ b y ( P a g e . p a g e _ n u m b e r ) . a l l ( )  
+         i f   n o t   p a g e s :  
+                 r a i s e   H T T P E x c e p t i o n ( s t a t u s _ c o d e = 4 0 0 ,   d e t a i l = " P r o j e c t   h a s   n o   p a g e s " )  
+                  
+         t r y :  
+                 #   N o m b r e   d e l   a r c h i v o  
+                 s a f e _ n a m e   =   " " . j o i n ( [ c   f o r   c   i n   p r o j e c t . n a m e   i f   c . i s a l n u m ( )   o r   c   i n   ( '   ' ,   ' - ' ,   ' _ ' ) ] ) . s t r i p ( )  
+                 e x p o r t _ f i l e n a m e   =   f " { s a f e _ n a m e } _ T r a n s l a t e d . { f o r m a t } "  
+                 z i p _ p a t h   =   o s . p a t h . j o i n ( U P L O A D _ D I R ,   e x p o r t _ f i l e n a m e )  
+                  
+                 #   C r e a r   Z I P / C B Z  
+                 w i t h   z i p f i l e . Z i p F i l e ( z i p _ p a t h ,   ' w ' ,   z i p f i l e . Z I P _ D E F L A T E D )   a s   z i p f :  
+                         f o r   i d x ,   p a g e   i n   e n u m e r a t e ( p a g e s ) :  
+                                 #   D e t e r m i n a r   q u Ã ©   i m a g e n   u s a r   ( F i n a l   >   C l e a n   >   O r i g i n a l )  
+                                 s o u r c e _ u r l   =   p a g e . f i n a l _ u r l   o r   p a g e . c l e a n _ u r l   o r   p a g e . o r i g i n a l _ u r l  
+                                 i f   n o t   s o u r c e _ u r l :  
+                                         c o n t i n u e  
+                                          
+                                 #   E x t r a e r   n o m b r e   d e   a r c h i v o   d e l   U R L   ( / u p l o a d s / x y z . j p g   - >   x y z . j p g )  
+                                 d i s k _ f i l e n a m e   =   s o u r c e _ u r l . s p l i t ( " / " ) [ - 1 ]  
+                                 d i s k _ p a t h   =   o s . p a t h . j o i n ( U P L O A D _ D I R ,   d i s k _ f i l e n a m e )  
+                                  
+                                 i f   o s . p a t h . e x i s t s ( d i s k _ p a t h ) :  
+                                         #   N o m b r e   d e n t r o   d e l   Z I P   ( P a g e _ 0 0 1 . j p g )  
+                                         e x t   =   d i s k _ f i l e n a m e . s p l i t ( " . " ) [ - 1 ]  
+                                         z i p _ e n t r y _ n a m e   =   f " P a g e _ { s t r ( i d x + 1 ) . z f i l l ( 3 ) } . { e x t } "  
+                                         z i p f . w r i t e ( d i s k _ p a t h ,   a r c n a m e = z i p _ e n t r y _ n a m e )  
+                                          
+                 r e t u r n   F i l e R e s p o n s e ( z i p _ p a t h ,   m e d i a _ t y p e = ' a p p l i c a t i o n / z i p ' ,   f i l e n a m e = e x p o r t _ f i l e n a m e )  
+                  
+         e x c e p t   E x c e p t i o n   a s   e :  
+                 i m p o r t   t r a c e b a c k  
+                 t r a c e b a c k . p r i n t _ e x c ( )  
+                 r a i s e   H T T P E x c e p t i o n ( s t a t u s _ c o d e = 5 0 0 ,   d e t a i l = f " E x p o r t   f a i l e d :   { s t r ( e ) } " )  
+ 
