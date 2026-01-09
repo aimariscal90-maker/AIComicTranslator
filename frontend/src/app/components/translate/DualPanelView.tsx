@@ -44,33 +44,29 @@ export default function DualPanelView({ originalSrc, resultSrc, isProcessing }: 
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         onClick={() => setLightboxSrc(null)}
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        onClick={() => setLightboxSrc(null)}
                         className="fixed inset-0 z-50 flex justify-center bg-black/95 backdrop-blur-xl cursor-zoom-out overflow-y-auto px-4 py-8"
+
                     >
-                        <motion.div 
+                        <motion.div
                             initial={{ scale: 0.95, opacity: 0, y: 20 }}
                             animate={{ scale: 1, opacity: 1, y: 0 }}
                             exit={{ scale: 0.95, opacity: 0 }}
                             transition={{ type: "spring", stiffness: 300, damping: 30 }}
                             className="relative w-full max-w-6xl my-auto"
-                            onClick={(e) => e.stopPropagation()} 
+                            onClick={(e) => e.stopPropagation()}
                         >
-                            <button 
+                            <button
                                 onClick={() => setLightboxSrc(null)}
                                 className="fixed top-6 right-6 p-3 bg-white/10 hover:bg-white/20 text-white rounded-full transition-colors z-50 backdrop-blur-md"
                             >
                                 <X className="w-8 h-8" />
                             </button>
-                            
+
                             {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img 
-                                src={lightboxSrc} 
-                                alt="Fullscreen Preview" 
-                                className="w-full h-auto rounded-lg shadow-2xl shadow-black mb-10" 
+                            <img
+                                src={lightboxSrc}
+                                alt="Fullscreen Preview"
+                                className="w-full h-auto rounded-lg shadow-2xl shadow-black mb-10"
                             />
                         </motion.div>
                     </motion.div>
