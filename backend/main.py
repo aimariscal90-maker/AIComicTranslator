@@ -98,7 +98,18 @@ async def upload_image(file: UploadFile = File(...)):
     }
 
 # --- BATCH PROCESSING (DAY 27) ---
-MAX_PARALLEL_WORKERS = 1  # CPU Limit: 1 (Evita bloqueo del PC)
+# --- BATCH PROCESSING (DAY 27 & 30 OPTIMIZATIONS) ---
+# Dynamic Worker Tuning: Use available cores but leave one for system/API
+import os
+try:
+    cpu_cores = os.cpu_count() or 1
+    # En Railway free tier a veces reporta muchos cores virtuales pero poco power.
+    # Limitamos a un rango sensato (1-4).
+    MAX_PARALLEL_WORKERS = max(1, min(4, cpu_cores - 1))
+except:
+    MAX_PARALLEL_WORKERS = 1
+
+print(f"[PERFORMANCE] Configured MAX_PARALLEL_WORKERS = {MAX_PARALLEL_WORKERS}")
 
 def log_to_file(msg):
     try:
@@ -206,6 +217,27 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
         from services.renderer import TextRenderer
         import cv2
         import numpy as np
+
+        # --- OPTIMIZATION 1: SMART DOWNSCALING (Day 30) ---
+        # Si la imagen es gigante (>1920px), la reducimos para acelerar x3 la detección/inpainting
+        # manteniendo calidad HD suficiente para cómic.
+        img_temp = cv2.imread(file_path)
+        if img_temp is not None:
+            h, w = img_temp.shape[:2]
+            max_dim = 1920
+            if max(h, w) > max_dim:
+                scale = max_dim / max(h, w)
+                new_w = int(w * scale)
+                new_h = int(h * scale)
+                
+                print(f"[OPTIMIZATION] Resizing image from {w}x{h} to {new_w}x{new_h}")
+                job_manager.update_job(job_id, progress=15, step=f"Optimizando Tamaño ({new_w}x{new_h})...")
+                
+                img_resized = cv2.resize(img_temp, (new_w, new_h), interpolation=cv2.INTER_AREA)
+                cv2.imwrite(file_path, img_resized) # Sobreescribimos para que todo el pipeline use la versión optimizada
+            else:
+                print(f"[OPTIMIZATION] Image size {w}x{h} is OK.")
+        # --------------------------------------------------
 
         # 1. Detección
         job_manager.update_job(job_id, progress=20, step="Detectando Bocadillos 🕵️")
