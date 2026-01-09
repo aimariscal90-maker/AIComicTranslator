@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import PipelineStepper from "@/app/components/translate/PipelineStepper";
 import DualPanelView from "@/app/components/translate/DualPanelView";
 import SmartDropzone from "@/app/components/upload/SmartDropzone";
-import { ArrowLeft, Download, AlertCircle, RefreshCw } from "lucide-react";
+import { ArrowLeft, Download, AlertCircle, RefreshCw, Edit3 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import api from "@/services/api";
@@ -116,8 +116,15 @@ export default function QuickTranslatePage() {
                             onClick={resetPipeline}
                             className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-bold shadow-sm transition-colors flex items-center gap-2"
                         >
-                            <RefreshCw className="w-4 h-4" /> New Scan
+                            <RefreshCw className="w-4 h-4" /> New
                         </button>
+
+                        <Link
+                            href={`/cleaner?job_id=${job?.id}`}
+                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-bold shadow-lg shadow-indigo-500/20 transition-all flex items-center gap-2"
+                        >
+                            <Edit3 className="w-4 h-4" /> Open Editor
+                        </Link>
 
                         <a
                             href={resultUrl}
@@ -125,7 +132,7 @@ export default function QuickTranslatePage() {
                             target="_blank"
                             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-bold shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-2"
                         >
-                            <Download className="w-4 h-4" /> Download Result
+                            <Download className="w-4 h-4" /> Download
                         </a>
                     </div>
                 )}
