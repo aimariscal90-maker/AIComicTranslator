@@ -798,7 +798,30 @@ def delete_project(project_id: str, db: Session = Depends(get_db)):
 @app.get("/process/{filename}/download-final")
 async def download_final_image(filename: str):
     """
-    
+    Descarga directa de la imagen final traducida (Forzando attachment).
+    """
+    try:
+        final_filename = f"final_{filename}.jpg"
+        file_path = os.path.join(UPLOAD_DIR, final_filename)
+        
+        if not os.path.exists(file_path):
+             # Fallback check
+             if os.path.exists(os.path.join(UPLOAD_DIR, f"final_{filename}")):
+                 final_filename = f"final_{filename}"
+                 file_path = os.path.join(UPLOAD_DIR, final_filename)
+             else:
+                 raise HTTPException(status_code=404, detail="File not found")
+
+        return FileResponse(
+            file_path, 
+            media_type='image/jpeg', 
+            filename=f"Traduccion_{filename}.jpg",
+            headers={"Content-Disposition": f"attachment; filename=Traduccion_{filename}.jpg"}
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")
+
 # --- PROJECT EXPORT (DAY 28 & 30) ---
 @app.get("/projects/{project_id}/export")
 async def export_project(project_id: str, format: str = "cbz", db: Session = Depends(get_db)):
