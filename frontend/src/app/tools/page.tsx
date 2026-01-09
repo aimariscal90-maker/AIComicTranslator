@@ -15,13 +15,22 @@ import {
 
 const tools = [
     {
+        id: "translator",
+        title: "Image Translator",
+        description: "Translate manga/comic pages fully automatically using AI.",
+        icon: Wand2,
+        color: "bg-indigo-500",
+        href: "/quick-translate",
+        status: "Ready"
+    },
+    {
         id: "cleaner",
-        title: "Text Remover",
-        description: "Remove text bubbles from manga pages automatically without translating.",
+        title: "Bubble Eraser",
+        description: "Remove text bubbles and sound effects, leaving pristine artwork.",
         icon: Eraser,
         color: "bg-pink-500",
         href: "/tools/text-remover",
-        status: "Ready"
+        status: "New"
     },
     {
         id: "packer",
@@ -40,15 +49,6 @@ const tools = [
         color: "bg-cyan-500",
         href: "/tools/extract",
         status: "Coming Soon"
-    },
-    {
-        id: "upscale",
-        title: "Smart Upscale",
-        description: "Increase resolution of anime/manga art using AI super-resolution.",
-        icon: ZoomIn,
-        color: "bg-violet-500",
-        href: "/tools/upscale",
-        status: "Planned"
     }
 ];
 
