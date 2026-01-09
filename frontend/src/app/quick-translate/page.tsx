@@ -3,7 +3,9 @@
 import { useState, useEffect } from "react";
 import PipelineStepper from "@/app/components/translate/PipelineStepper";
 import DualPanelView from "@/app/components/translate/DualPanelView";
-import { UploadCloud } from "lucide-react";
+import SmartDropzone from "@/app/components/upload/SmartDropzone";
+import { ArrowLeft } from "lucide-react";
+import Link from "next/link";
 
 export default function QuickTranslatePage() {
     // Mock State for Demo
@@ -37,10 +39,16 @@ export default function QuickTranslatePage() {
         }
     }, [status]);
 
-    const handleSimulatedUpload = () => {
-        setFile(new File([""], "mock.jpg"));
+    const handleFileSelect = (uploadedFile: File) => {
+        setFile(uploadedFile);
         setStatus("processing");
         setCurrentStep("upload");
+    };
+
+    const resetPipeline = () => {
+        setStatus('idle');
+        setFile(null);
+        setCurrentStep('idle');
     };
 
     return (
@@ -48,46 +56,54 @@ export default function QuickTranslatePage() {
 
             {/* Header */}
             <div className="flex justify-between items-center">
-                <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-                    <span className="text-indigo-400">⚡</span> Quick Translate Pipeline
-                </h1>
-                {status === 'idle' && (
-                    <button
-                        onClick={handleSimulatedUpload}
-                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-bold flex items-center gap-2"
-                    >
-                        <UploadCloud className="w-4 h-4" />
-                        Simulate Drop File
-                    </button>
-                )}
+                <div className="flex items-center gap-4">
+                    <Link href="/" className="p-2 hover:bg-slate-800 rounded-full transition-colors text-slate-400 hover:text-white">
+                        <ArrowLeft className="w-5 h-5" />
+                    </Link>
+                    <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+                        <span className="text-indigo-400">⚡</span> Quick Translate Pipeline
+                    </h1>
+                </div>
+
                 {status === 'completed' && (
                     <button
-                        onClick={() => { setStatus('idle'); setFile(null); setCurrentStep('idle'); }}
-                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-bold"
+                        onClick={resetPipeline}
+                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-bold shadow-sm transition-colors"
                     >
                         New Scan
                     </button>
                 )}
             </div>
 
-            <div className="flex-1 flex gap-6 min-h-0">
-                {/* Left: Pipeline Status (Sticky) */}
-                <div className="w-64 shrink-0 bg-slate-900/50 p-6 rounded-xl border border-slate-800/50">
-                    <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-6 border-b border-slate-800 pb-2">
-                        System Status
-                    </h2>
-                    <PipelineStepper currentStepId={currentStep} />
+            {/* Main Content Area */}
+            {status === 'idle' ? (
+                // State: Upload (Empty)
+                <div className="flex-1 flex items-center justify-center p-12">
+                    <div className="w-full max-w-2xl h-80">
+                        <SmartDropzone onFileSelect={handleFileSelect} />
+                    </div>
                 </div>
+            ) : (
+                // State: Processing / Result
+                <div className="flex-1 flex gap-6 min-h-0 animate-in fade-in zoom-in-95 duration-300">
+                    {/* Left: Pipeline Status (Sticky) */}
+                    <div className="w-72 shrink-0 bg-slate-900/50 p-6 rounded-xl border border-slate-800/50 backdrop-blur-sm">
+                        <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-6 border-b border-slate-800 pb-2">
+                            Pipeline Status
+                        </h2>
+                        <PipelineStepper currentStepId={currentStep} />
+                    </div>
 
-                {/* Right: Dual View */}
-                <div className="flex-1 min-w-0">
-                    <DualPanelView
-                        originalSrc={file ? "https://placehold.co/800x1200/222/FFF/png?text=Input" : null}
-                        resultSrc={status === 'completed' ? "https://placehold.co/800x1200/222/818cf8/png?text=Translated+Result" : null}
-                        isProcessing={status === 'processing'}
-                    />
+                    {/* Right: Dual View */}
+                    <div className="flex-1 min-w-0">
+                        <DualPanelView
+                            originalSrc={file ? "https://placehold.co/800x1200/222/FFF/png?text=Input" : null}
+                            resultSrc={status === 'completed' ? "https://placehold.co/800x1200/222/818cf8/png?text=Translated+Result" : null}
+                            isProcessing={status === 'processing'}
+                        />
+                    </div>
                 </div>
-            </div>
+            )}
 
         </div>
     );
