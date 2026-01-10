@@ -59,19 +59,60 @@ class TextRemover:
                     pts = np.array(wb, np.int32)
                     cv2.fillPoly(mask, [pts], 1.0)
             else:
-                # Modo Bruto (Fallback o Default): Usar poligono del globo
-                if bubble.get('polygon') and len(bubble['polygon']) > 0:
-                    pts = np.array(bubble['polygon'], np.int32)
-                    cv2.fillPoly(mask, [pts], 1.0)
-                else:
-                    x1, y1, x2, y2 = map(int, bubble['bbox'])
-                    cv2.rectangle(mask, (x1, y1), (x2, y2), 1.0, -1)
+                # --- ESTRATEGIA: SOLO TEXTO (Adaptive) ---
+                # Objetivo: Crear mascara SOLO de las letras.
+                # 1. Analizar si el globo es claro (letras negras) u oscuro (letras blancas).
+                x1, y1, x2, y2 = map(int, bubble['bbox'])
+                    
+                # Clamp
+                x1, y1 = max(0, x1), max(0, y1)
+                x2, y2 = min(w, x2), min(h, y2)
+                
+                if x2 > x1 and y2 > y1:
+                    roi = img[y1:y2, x1:x2]
+                    gray_roi = cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
+                    
+                    # Determinar brillo medio
+                    mean_brightness = np.mean(gray_roi)
+                    
+                    text_mask_roi = None
+                    
+                    if mean_brightness > 100:
+                        # TIPO 1: Globo Claro (Fondo Blanco/Gris, Texto Oscuro)
+                        # Buscamos pixeles oscuros (< umbral)
+                        # Adaptive Threshold es mejor para iluminacion variable
+                        text_mask_roi = cv2.adaptiveThreshold(
+                            gray_roi, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                            cv2.THRESH_BINARY_INV, 21, 10
+                        )
+                    else:
+                        # TIPO 2: Globo Oscuro (Fondo Negro, Texto Blanco)
+                        # Buscamos pixeles claros (> umbral)
+                        # Invertimos la imagen para que el texto blanco sea negro, luego threshold inv
+                        # O simplemente threshold normal: Texto blanco (255) -> Mascara (255)
+                        _, text_mask_roi = cv2.threshold(gray_roi, 150, 255, cv2.THRESH_BINARY)
+                        
+                    # Limpieza Morfologica:
+                    # 1. Eliminar ruido diminuto (puntos) con OPEN
+                    # 2. Conectar letras rotas con DILATE
+                    kernel_clean = cv2.getStructuringElement(cv2.MORPH_RECT, (2,2))
+                    # Eliminar ruido
+                    text_mask_roi = cv2.morphologyEx(text_mask_roi, cv2.MORPH_OPEN, kernel_clean)
+                    
+                    # Asignar al mask global
+                    mask[y1:y2, x1:x2] = text_mask_roi.astype(np.float32) / 255.0
+                    
+                    # IMPORTANTE: Si por alguna razon la mascara esta vacia (no detecto texto),
+                    # hacemos fallback a borrar un rectangulo pequeño en el centro? 
+                    # No, mejor no borrar nada que borrarlo todo.
+                    if np.sum(text_mask_roi) < 10:
+                            print(f"[INPAINT WARNING] No text detected in bubble {x1},{y1}. Skipping mask.")
                 
         # Dilatar mascara
         # Para texto fino, dilatar menos. Para globo entero, dilatar un poco mas.
-        if mask_mode == 'text':
-             MASK_PADDING = 3 # Mas fino para letras
-             iter_dil = 1
+        if mask_mode == 'text' or True: # Force precision mode always as requested
+             MASK_PADDING = 3 
+             iter_dil = 2 # Un poco mas para asegurar que cubre bordes de compresion JPG
         else:
              MASK_PADDING = 5
              iter_dil = 1

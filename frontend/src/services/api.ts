@@ -4,7 +4,7 @@ import { API_URL } from '@/config';
 const api = axios.create({
     baseURL: API_URL,
     headers: {
-        'Content-Type': 'application/json',
+        // 'Content-Type': 'application/json', // REMOVED: Let Axios set this (multipart vs json)
     },
     timeout: 300000, // 5 minutes (AI tasks can be slow if synchronous, though we use polling)
 });

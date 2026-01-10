@@ -4,6 +4,7 @@ import uuid
 import os
 import zipfile
 import json
+import cv2
 import traceback
 from datetime import datetime
 from typing import Optional, List
@@ -24,17 +25,16 @@ from services.queue_manager import JobManager
 
 # Pre-import AI Services
 print("[BOOT] Pre-loading AI Services...")
-try:
-    from services.detector import BubbleDetector
-    from services.inpainting import TextRemover
-    from services.ocr import OCRService
-    from services.translator import TranslatorService
-    from services.renderer import TextRenderer
-    import cv2
-    import numpy as np
-    print("[BOOT] AI Services loaded successfully.")
-except Exception as e:
-    print(f"[BOOT ERROR] Failed to load one or more services: {e}")
+# Pre-import AI Services
+print("[BOOT] Pre-loading AI Services...")
+from services.detector import BubbleDetector
+from services.inpainting import TextRemover
+from services.ocr import OCRService
+from services.translator import TranslatorService
+from services.renderer import TextRenderer
+from services.style_analyzer import StyleAnalyzer
+import numpy as np
+print("[BOOT] AI Services loaded successfully.")
 
 app = FastAPI(title="AI Comic Translator API", version="0.8.0")
 job_manager = JobManager()
@@ -69,19 +69,39 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
         job_manager.update_job(job_id, status="processing", progress=10, step="Initializing AI Models...")
         
         # 1. Image Optimization (Smart Downscaling)
+        if not os.path.exists(file_path):
+             raise Exception(f"File not found: {file_path}")
+        
+        file_size = os.path.getsize(file_path)
+        print(f"[TASK] Processing {unique_filename} (Size: {file_size} bytes)")
+        
+        if file_size == 0:
+             raise Exception("File is empty (0 bytes)")
+
         img_temp = cv2.imread(file_path)
-        if img_temp is not None:
-            h, w = img_temp.shape[:2]
-            max_dim = 2500 # High res for comics
-            if max(h, w) > max_dim:
-                scale = max_dim / max(h, w)
-                new_w = int(w * scale)
-                new_h = int(h * scale)
-                cv2.imwrite(file_path, cv2.resize(img_temp, (new_w, new_h), interpolation=cv2.INTER_AREA))
+        if img_temp is None:
+            # Try valid image check
+            print(f"[TASK WARNING] cv2.imread failed for {file_path}. Checking permissions/format.")
+            raise Exception("Cv2 failed to read image. Corrupt or unsupported format.")
+            
+        h, w = img_temp.shape[:2]
+        max_dim = 2500 # High res for comics
+        if max(h, w) > max_dim:
+            scale = max_dim / max(h, w)
+            new_w = int(w * scale)
+            new_h = int(h * scale)
+            print(f"[TASK] Resizing image from {w}x{h} to {new_w}x{new_h}")
+            success = cv2.imwrite(file_path, cv2.resize(img_temp, (new_w, new_h), interpolation=cv2.INTER_AREA))
+            if not success:
+                print(f"[TASK WARNING] Failed to overwrite resized image")
 
         # 2. Detector
         job_manager.update_job(job_id, progress=20, step="Detecting Bubbles 🕵️")
         detector = BubbleDetector()
+        
+        # Verify again before YOLO
+        if not os.path.exists(file_path): raise Exception("File vanished before detection")
+        
         bubbles = detector.detect(file_path)
         
         # Generate debug image
@@ -89,8 +109,8 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
         detector.draw_boxes(file_path, bubbles, os.path.join(UPLOAD_DIR, debug_filename))
 
         # 3. Contextual Processing based on Mode
-        if mode == "full":
-            # --- FULL TRANSLATION PIPELINE ---
+        if mode == "full" or mode == "premium":
+            # --- FULL & PREMIUM TRANSLATION PIPELINE ---
             
             # OCR
             job_manager.update_job(job_id, progress=40, step="Reading Text (OCR) 📖")
@@ -98,6 +118,12 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
             
             # Helper: Extract crops and run OCR
             img_cv = cv2.imread(file_path)
+            
+            # Initialize StyleAnalyzer if Premium
+            if mode == "premium":
+                style_analyzer = StyleAnalyzer()
+                job_manager.update_job(job_id, progress=45, step="Analyzing Art Style 🎨")
+            
             for bubble in bubbles:
                 x1, y1, x2, y2 = map(int, bubble['bbox'])
                 crop = img_cv[y1:y2, x1:x2]
@@ -107,6 +133,19 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
                         res = ocr_service.detect_text(encoded.tobytes())
                         bubble['text'] = res.get('text', '')
                         bubble['clean_text'] = bubble['text'].replace('\n', ' ')
+                        
+                        # PREMIUM: Style Analysis
+                        if mode == "premium":
+                            try:
+                                style = style_analyzer.analyze_roi(img_cv, bubble['bbox'])
+                                # Inject Style into Bubble for Renderer
+                                bubble['text_color'] = style.get('text_color', '#000000')
+                                # bubble['font'] = style.get('font_match', 'AnimeAce') # Future
+                                
+                                # Store raw style for debug
+                                bubble['style_data'] = style
+                            except Exception as e:
+                                print(f"Style Analysis failed for bubble: {e}")
 
             # Translate
             job_manager.update_job(job_id, progress=60, step="Translating 🤖")
@@ -124,6 +163,10 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
             job_manager.update_job(job_id, progress=75, step="Cleaning Text 🎨")
             remover = TextRemover()
             clean_filename = f"clean_text_{unique_filename}"
+            # Use 'text' mask mode for Premium to respect bubbles
+            mask_mode = 'text' if (mode == "premium") else 'bubble'
+            # ACTUALLY: We already forced 'text' masking as default in inpainting.py based on user request ("El borrado selectivo")
+            # So mode doesn't matter much here, but let's be explicit
             remover.remove_text(file_path, bboxes=bubbles, output_path=os.path.join(UPLOAD_DIR, clean_filename), fast_mode=True)
             
             # Render
