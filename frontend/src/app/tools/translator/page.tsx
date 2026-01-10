@@ -15,6 +15,7 @@ export default function TranslatorToolPage() {
     const [originalUrl, setOriginalUrl] = useState<string | null>(null);
     const [resultUrl, setResultUrl] = useState<string | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [isPremium, setIsPremium] = useState(false); // New state for Premium Mode
 
     // Polling logic
     const { startPolling, job, stopPolling } = usePolling({
@@ -45,7 +46,7 @@ export default function TranslatorToolPage() {
 
         const formData = new FormData();
         formData.append('file', uploadedFile);
-        formData.append('mode', 'full'); // Explicitly Full Translation
+        formData.append('mode', isPremium ? 'premium' : 'full'); // Use state
 
         try {
             toast.message("Uploading...", { description: "Sending to translation engine." });
@@ -99,9 +100,32 @@ export default function TranslatorToolPage() {
 
                 {/* Initial State: Dropzone */}
                 {!file ? (
-                    <div className="w-full max-w-xl p-8 animate-in zoom-in-95 duration-500">
+                    <div className="w-full max-w-xl p-8 animate-in zoom-in-95 duration-500 flex flex-col items-center">
                         <SmartDropzone onFileSelect={handleFileSelect} />
-                        <div className="text-center mt-8 space-y-2">
+
+                        {/* Premium Toggle */}
+                        <div className="mt-8 flex items-center gap-4 bg-slate-800/50 p-4 rounded-xl border border-slate-700 w-full hover:bg-slate-800/80 transition-colors">
+                            <div className={`p-3 rounded-full ${isPremium ? 'bg-amber-500/20 text-amber-500' : 'bg-slate-700 text-slate-400'} transition-colors`}>
+                                <Wand2 className="w-6 h-6" />
+                            </div>
+                            <div className="flex-1">
+                                <h4 className="text-white font-bold flex items-center gap-2">
+                                    Premium Style Cloning Mode
+                                    {isPremium && <span className="ml-2 text-[10px] uppercase bg-amber-500 text-slate-900 px-2 py-0.5 rounded-full font-bold">Active</span>}
+                                </h4>
+                                <p className="text-slate-400 text-sm">
+                                    Replicates original fonts, colors, and styles. (Slower)
+                                </p>
+                            </div>
+                            <div
+                                onClick={() => setIsPremium(!isPremium)}
+                                className={`w-14 h-8 rounded-full p-1 transition-colors duration-300 relative cursor-pointer ${isPremium ? 'bg-amber-500' : 'bg-slate-700'}`}
+                            >
+                                <div className={`w-6 h-6 bg-white rounded-full shadow-lg transition-transform duration-300 ${isPremium ? 'translate-x-6' : 'translate-x-0'}`} />
+                            </div>
+                        </div>
+
+                        <div className="text-center mt-6 space-y-2">
                             <h3 className="text-white font-bold text-lg">AI-Powered Comic Translation</h3>
                             <p className="text-slate-500 text-sm max-w-sm mx-auto">
                                 Automatically detects bubbles, removes text, translates, and re-renders in Spanish.

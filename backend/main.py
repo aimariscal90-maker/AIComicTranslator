@@ -138,9 +138,25 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
                         if mode == "premium":
                             try:
                                 style = style_analyzer.analyze_roi(img_cv, bubble['bbox'])
+                                
+                                # Font Matching (Day 21 / Phase 2)
+                                from services.font_matcher import FontMatcher
+                                font_matcher = FontMatcher()
+                                font_name = font_matcher.match_font(img_cv, style)
+                                
+                                # --- VERIFICATION LOGS (DAYS 1-6) ---
+                                print(f"\n🔍 [SMART-TYPO] Bubble Analysis:")
+                                print(f"   🎨 [Day 2 Color] Detectado: {style.get('text_color')} {'(Inverted)' if style.get('is_inverted') else ''}")
+                                print(f"   📏 [Day 3 Size]  Estimado:  {style.get('estimated_font_size')}px")
+                                print(f"   ⚖️ [Day 4 Bold]  Density:   {style.get('density'):.2f} (Bold: {style.get('is_bold')})")
+                                print(f"   🧠 [Day 6 Class] Font:      {font_name}")
+                                print(f"   ----------------------------------------")
+
                                 # Inject Style into Bubble for Renderer
                                 bubble['text_color'] = style.get('text_color', '#000000')
-                                # bubble['font'] = style.get('font_match', 'AnimeAce') # Future
+                                bubble['estimated_font_size'] = style.get('estimated_font_size', 20)
+                                bubble['font'] = font_name
+                                bubble['font_path'] = font_matcher.get_font_path(font_name)
                                 
                                 # Store raw style for debug
                                 bubble['style_data'] = style

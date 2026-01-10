@@ -37,11 +37,15 @@ class StyleAnalyzer:
         # 3. Color Sampling (Font Color)
         color_data = self._analyze_color(roi, mask)
         
+        # 4. Geometry (Font Size)
+        geo_data = self._analyze_geometry(mask)
+        
         return {
             "has_content": True,
             "is_inverted": is_dark_bg,
             **density_data,
-            **color_data
+            **color_data,
+            **geo_data
         }
 
     def _binarize_text(self, roi: np.ndarray) -> Tuple[np.ndarray, bool]:
@@ -139,11 +143,44 @@ class StyleAnalyzer:
             print(f"Color analysis failed: {e}")
             return {"text_color": "#000000"}
 
+    def _analyze_geometry(self, mask: np.ndarray) -> Dict[str, int]:
+        """
+        Estimates font size by finding contours (letters) and calculating median height.
+        """
+        # Get contours
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        heights = []
+        for cnt in contours:
+            x, y, w, h = cv2.boundingRect(cnt)
+            
+            # Filter noise
+            if h < 4 or w < 2: continue 
+            # Filter huge blobs (e.g. borders)
+            if h > mask.shape[0] * 0.9: continue 
+            
+            heights.append(h)
+            
+        if not heights:
+            return {"estimated_font_size": 20} # Default safe size
+            
+        # Median height is a robust estimator of letter size (x-height approx)
+        median_height = np.median(heights)
+        
+        # Convert to estimated full font size (Pillow font size usually includes ascenders/descenders)
+        # Typically x-height is 0.5 ~ 0.7 of full size. Let's assume 0.7
+        font_size_px = int(median_height / 0.7)
+        
+        return {
+            "estimated_font_size": max(10, font_size_px)
+        }
+
     def _get_default_style(self):
         return {
             "has_content": False,
             "error": "Empty ROI",
             "is_inverted": False,
             "text_color": "#000000",
-            "is_bold": False
+            "is_bold": False,
+            "estimated_font_size": 20
         }

@@ -87,7 +87,15 @@ class TextRenderer:
                     # Obtener fuente deseada por el usuario (o Default)
                     font_name = bubble.get('font', 'ComicNeue')
 
-                    font_size = int(h / 3) # Empezar optimista
+                    # Size Strategy: Use estimated OR bounding box heuristic
+                    estimated_size = bubble.get('estimated_font_size')
+                    if estimated_size:
+                        # Start slightly smaller than estimated (to fit translation which might be longer)
+                        # Or start exact. Let's start exact.
+                        font_size = int(estimated_size * 0.9) 
+                    else:
+                        font_size = int(h / 3) # Empezar optimista
+                        
                     min_font_size = 8
                     
                     final_wrapped_lines = []
@@ -96,8 +104,10 @@ class TextRenderer:
                     
                     # Bucle de reducción de fuente
                     # Day 13 Refined: Shape-Aware Wrapping
+                    # Bucle de reducción de fuente
+                    # Day 13 Refined: Shape-Aware Wrapping
                     while font_size >= min_font_size:
-                        font = self._load_font(font_size, font_name)
+                        font = self._load_font(font_size, font_name, bubble.get('font_path'))
                         
                         if is_rectangle:
                              # Estrategia Rectangular
@@ -134,7 +144,7 @@ class TextRenderer:
                     # Fallback si no cabe ni con min_size (usamos wrapping rectangular clásico a fuerza bruta)
                     if not final_wrapped_lines:
                         font_size = min_font_size
-                        final_font = self._load_font(font_size, font_name)
+                        final_font = self._load_font(font_size, font_name, bubble.get('font_path'))
                         # Wrapping rectangular forzoso
                         max_w_fallback = w * 0.8
                         final_wrapped_lines = self._wrap_text_pixels(text_content, final_font, max_w_fallback, draw_txt)
@@ -358,33 +368,43 @@ class TextRenderer:
         # Si salimos del bucle es que no se encontró configuración válida
         return []
 
-    def _load_font(self, size, font_name="ComicNeue"):
+    def _load_font(self, size, font_name="ComicNeue", explicit_path=None):
         """
-        Carga una fuente desde la carpeta backend/fonts.
-        Mapping de nombres:
-        - "ComicNeue" -> "ComicNeue-Bold.ttf" (Default)
-        - "AnimeAce" -> "animeace.ttf"
-        - "WildWords" -> "wildwords.ttf"
+        Carga una fuente.
+        Prioridad:
+        1. explicit_path (ruta absoluta .ttf)
+        2. font_name mapping en backend/fonts
+        3. Fallbacks
         """
+        
+        # 1. Ruta explicita del FontMatcher
+        if explicit_path and os.path.exists(explicit_path):
+            try:
+                return ImageFont.truetype(explicit_path, size)
+            except:
+                pass # Fallback
+
         fonts_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "fonts")
         
-        # Mapa de Archivos
+        # Mapa de Archivos (Legacy / Default)
         font_files = {
-            "ComicNeue": "ComicNeue-Bold.ttf",
-            "AnimeAce": "animeace.ttf",
-            "WildWords": "CCWildWords-Roman.ttf"
+            "ComicNeue": "dialogue/ComicNeue-Bold.ttf", # Updated path structure
+            "AnimeAce": "dialogue/animeace.ttf",
+            "WildWords": "dialogue/CCWildWords-Roman.ttf",
+            "Bangers": "sfx/Bangers-Regular.ttf",
+            "Roboto": "narrator/Roboto-Medium.ttf"
         }
         
-        target_file = font_files.get(font_name, "ComicNeue-Bold.ttf")
+        target_file = font_files.get(font_name, "dialogue/ComicNeue-Bold.ttf")
         full_path = os.path.join(fonts_dir, target_file)
 
-        # Prioridad: Fuente solicitada
+        # Prioridad 2: Fuente solicitada por nombre
         try:
             return ImageFont.truetype(full_path, size)
         except:
             # Fallback 1: Intentar ComicNeue si falló la otra
             try:
-                fallback_path = os.path.join(fonts_dir, "ComicNeue-Bold.ttf")
+                fallback_path = os.path.join(fonts_dir, "dialogue/ComicNeue-Bold.ttf")
                 return ImageFont.truetype(fallback_path, size)
             except:
                 # Fallback final a Arial o Default

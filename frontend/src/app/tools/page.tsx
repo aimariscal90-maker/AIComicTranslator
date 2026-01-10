@@ -21,7 +21,7 @@ const tools = [
         description: "Intelligent translation that clones the original font style, color, and weight.",
         icon: Crown,
         color: "bg-amber-500",
-        href: "/tools/premium-translator",
+        href: "/tools/translator", // Changed to point to the main translator page where we added the toggle
         status: "Beta"
     },
     {
@@ -88,50 +88,56 @@ export default function ToolsPage() {
 
             {/* Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 px-4">
-                {tools.map((tool, index) => (
-                    <Link href={tool.status === "Ready" || tool.status === "New" ? tool.href : "#"} key={tool.id} className="block group">
-                        <motion.div
-                            initial={{ opacity: 0, scale: 0.9 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            transition={{ delay: index * 0.1 }}
-                            whileHover={{ y: -5 }}
-                            className={`relative bg-slate-900 border border-slate-800 rounded-3xl p-8 transition-all cursor-pointer overflow-visible h-full flex flex-col ${tool.status === "Ready" || tool.status === "New"
-                                ? "hover:bg-slate-800/50 hover:border-indigo-500/30"
-                                : "opacity-60 cursor-not-allowed grayscale"
-                                }`}
-                        >
-                            {/* Glow Effect */}
-                            <div className={`absolute top-0 right-0 w-32 h-32 ${tool.color} blur-[80px] opacity-10 group-hover:opacity-20 transition-opacity rounded-full pointer-events-none`} />
+                {tools.map((tool, index) => {
+                    const isEnabled = tool.status === "Ready" || tool.status === "New" || tool.status === "Beta";
+                    return (
+                        <Link href={isEnabled ? tool.href : "#"} key={tool.id} className="block group">
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.9 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                transition={{ delay: index * 0.1 }}
+                                whileHover={{ y: -5 }}
+                                className={`relative bg-slate-900 border border-slate-800 rounded-3xl p-8 transition-all cursor-pointer overflow-visible h-full flex flex-col ${isEnabled
+                                    ? "hover:bg-slate-800/50 hover:border-indigo-500/30"
+                                    : "opacity-60 cursor-not-allowed grayscale"
+                                    }`}
+                            >
+                                {/* Glow Effect */}
+                                <div className={`absolute top-0 right-0 w-32 h-32 ${tool.color} blur-[80px] opacity-10 group-hover:opacity-20 transition-opacity rounded-full pointer-events-none`} />
 
-                            <div className="relative z-10 flex flex-col h-full">
-                                <div className={`w-14 h-14 ${tool.color} rounded-2xl flex items-center justify-center text-white shadow-lg mb-6 group-hover:scale-110 transition-transform`}>
-                                    <tool.icon className="w-7 h-7" />
+                                <div className="relative z-10 flex flex-col h-full">
+                                    <div className={`w-14 h-14 ${tool.color} rounded-2xl flex items-center justify-center text-white shadow-lg mb-6 group-hover:scale-110 transition-transform`}>
+                                        <tool.icon className="w-7 h-7" />
+                                    </div>
+
+                                    <h3 className="text-2xl font-bold text-white mb-3 group-hover:text-indigo-400 transition-colors">
+                                        {tool.title}
+                                    </h3>
+
+                                    <p className="text-slate-400 leading-relaxed mb-6 flex-1">
+                                        {tool.description}
+                                    </p>
+
+                                    <div className="flex items-center justify-between mt-auto">
+                                        <span className={`text-xs font-bold px-3 py-1 rounded-full ${tool.status === 'Ready' ? 'bg-emerald-500/10 text-emerald-400' :
+                                                tool.status === 'New' ? 'bg-indigo-500/10 text-indigo-400' :
+                                                    tool.status === 'Beta' ? 'bg-amber-500/10 text-amber-400' :
+                                                        'bg-slate-700/50 text-slate-500'
+                                            }`}>
+                                            {tool.status}
+                                        </span>
+
+                                        {isEnabled && (
+                                            <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-all transform translate-x-[-10px] group-hover:translate-x-0">
+                                                <ArrowRight className="w-4 h-4" />
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-
-                                <h3 className="text-2xl font-bold text-white mb-3 group-hover:text-indigo-400 transition-colors">
-                                    {tool.title}
-                                </h3>
-
-                                <p className="text-slate-400 leading-relaxed mb-6 flex-1">
-                                    {tool.description}
-                                </p>
-
-                                <div className="flex items-center justify-between mt-auto">
-                                    <span className={`text-xs font-bold px-3 py-1 rounded-full ${tool.status === 'Ready' || tool.status === "New" ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-700/50 text-slate-500'
-                                        }`}>
-                                        {tool.status}
-                                    </span>
-
-                                    {(tool.status === 'Ready' || tool.status === "New") && (
-                                        <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-all transform translate-x-[-10px] group-hover:translate-x-0">
-                                            <ArrowRight className="w-4 h-4" />
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </motion.div>
-                    </Link>
-                ))}
+                            </motion.div>
+                        </Link>
+                    )
+                })}
 
                 {/* Coming Soon Placeholder */}
                 <div className="md:col-span-2 lg:col-span-1 border-2 border-dashed border-slate-800 rounded-3xl flex flex-col items-center justify-center p-8 text-slate-600">
@@ -143,3 +149,4 @@ export default function ToolsPage() {
         </div>
     );
 }
+
