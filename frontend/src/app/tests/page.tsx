@@ -1,109 +1,201 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { API_URL } from "@/config";
-import BatchUploadModal from "@/app/components/BatchUploadModal";
+import { useState } from "react";
+import { motion } from "framer-motion";
+import { Upload, FlaskConical, Loader2, CheckCircle, Search, RefreshCw, Eye } from "lucide-react";
+import Image from "next/image";
 
-export default function TestsPage() {
-    const [apiStatus, setApiStatus] = useState<"loading" | "online" | "offline">("loading");
-    const [showBatchModal, setShowBatchModal] = useState(false);
+// Endpoint: POST /analyze-style (FormData: file)
 
-    // Check API Status on Mount
-    useEffect(() => {
-        checkApi();
-    }, []);
+export default function LabPage() {
+    const [file, setFile] = useState<File | null>(null);
+    const [preview, setPreview] = useState<string | null>(null);
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [result, setResult] = useState<any>(null);
 
-    const checkApi = async () => {
-        setApiStatus("loading");
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            const f = e.target.files[0];
+            setFile(f);
+            const url = URL.createObjectURL(f);
+            setPreview(url);
+            setResult(null);
+        }
+    };
+
+    const runAnalysis = async () => {
+        if (!file) return;
+
+        setIsAnalyzing(true);
+        const formData = new FormData();
+        formData.append("file", file);
+
         try {
-            const res = await fetch(`${API_URL}/`);
-            if (res.ok) {
-                setApiStatus("online");
-            } else {
-                setApiStatus("offline");
-            }
-        } catch (e) {
-            setApiStatus("offline");
+            const res = await fetch("http://localhost:8000/analyze-style", {
+                method: "POST",
+                body: formData,
+            });
+
+            if (!res.ok) throw new Error("Analysis failed");
+
+            const data = await res.json();
+            setResult(data);
+        } catch (error) {
+            console.error(error);
+            alert("Error running analysis. Is backend running?");
+        } finally {
+            setIsAnalyzing(false);
         }
     };
 
     return (
-        <main className="min-h-screen bg-gray-100 p-8">
-            <div className="max-w-4xl mx-auto space-y-8">
-                <header className="border-b pb-6 mb-6">
-                    <h1 className="text-3xl font-extrabold text-gray-800">🛠️ Panel de Pruebas (Tests)</h1>
-                    <p className="text-gray-500">Verifica la funcionalidad de los componentes aislados.</p>
-                </header>
-
-                {/* TEST 1: API Connectivity */}
-                <section className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                    <div className="flex justify-between items-center mb-4">
-                        <h2 className="text-xl font-bold">1. Conectividad API (Backend)</h2>
-                        <span className={`px-3 py-1 rounded-full text-sm font-bold ${apiStatus === 'online' ? 'bg-green-100 text-green-700' :
-                                apiStatus === 'offline' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'
-                            }`}>
-                            {apiStatus.toUpperCase()}
-                        </span>
-                    </div>
-                    <p className="text-sm text-gray-600 mb-4">
-                        URL Configurada: <code className="bg-gray-100 px-2 py-1 rounded">{API_URL}</code>
+        <div className="max-w-6xl mx-auto space-y-8 pb-20">
+            {/* Header */}
+            <div className="flex items-center gap-4 py-8 border-b border-slate-800">
+                <div className="bg-indigo-500/10 p-4 rounded-2xl">
+                    <FlaskConical className="w-10 h-10 text-indigo-400" />
+                </div>
+                <div>
+                    <h1 className="text-3xl font-bold text-white">Style Lab (Phase 1)</h1>
+                    <p className="text-slate-400">
+                        Upload a cropped text bubble to verify <b>Binarization</b> & <b>Contour Detection</b>.
                     </p>
-                    <button
-                        onClick={checkApi}
-                        className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-900 transition"
-                    >
-                        🔄 Re-probar Conexión
-                    </button>
-                </section>
-
-                {/* TEST 2: Batch Upload Modal */}
-                <section className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                    <h2 className="text-xl font-bold mb-2">2. Modal de Carga Masiva (Batch Upload)</h2>
-                    <p className="text-sm text-gray-600 mb-4">
-                        Prueba la apertura y cierre del modal de subida de archivos (CBZ, ZIP, Imágenes).
-                        <br />
-                        <span className="text-yellow-600">Nota: Requiere un proyecto existente para funcionar realmente.</span>
-                    </p>
-                    <button
-                        onClick={() => setShowBatchModal(true)}
-                        className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-bold"
-                    >
-                        🚀 Abrir Batch Modal
-                    </button>
-
-                    {/* Dummy Project ID needed for props, user should select one or we mock it */}
-                    <BatchUploadModal
-                        isOpen={showBatchModal}
-                        onClose={() => setShowBatchModal(false)}
-                        selectedProject="test-project-id"
-                    />
-                </section>
-
-                {/* TEST 3: Navigation Links */}
-                <section className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                    <h2 className="text-xl font-bold mb-4">3. Navegación Rápida</h2>
-                    <div className="flex gap-4">
-                        <a href="/" className="px-4 py-2 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200">
-                            🏠 Ir al Inicio
-                        </a>
-                        <a href="/dashboard" className="px-4 py-2 bg-purple-100 text-purple-700 rounded hover:bg-purple-200">
-                            📊 Ir al Dashboard
-                        </a>
-                    </div>
-                </section>
-
-                {/* TEST 4: Environment Info */}
-                <section className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                    <h2 className="text-xl font-bold mb-4">4. Información de Entorno</h2>
-                    <pre className="bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto text-xs">
-                        {JSON.stringify({
-                            NODE_ENV: process.env.NODE_ENV,
-                            NEXT_PUBLIC_API_URL: API_URL,
-                            TIMESTAMP: new Date().toISOString()
-                        }, null, 2)}
-                    </pre>
-                </section>
+                </div>
             </div>
-        </main>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Left: Input */}
+                <div className="space-y-6">
+                    <div className="bg-slate-900 border-2 border-dashed border-slate-800 rounded-3xl p-10 flex flex-col items-center justify-center text-center hover:bg-slate-800/50 transition-colors relative min-h-[300px]">
+
+                        <input
+                            type="file"
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                            accept="image/*"
+                            onChange={handleFileSelect}
+                        />
+
+                        {preview ? (
+                            <div className="relative w-full h-full flex items-center justify-center">
+                                <Image
+                                    src={preview}
+                                    alt="Preview"
+                                    width={400}
+                                    height={300}
+                                    className="max-h-[300px] w-auto object-contain rounded-lg shadow-2xl"
+                                />
+                                <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 hover:opacity-100 transition-opacity">
+                                    <p className="text-white font-medium">Click to change</p>
+                                </div>
+                            </div>
+                        ) : (
+                            <>
+                                <Upload className="w-16 h-16 text-slate-600 mb-6" />
+                                <h3 className="text-xl font-bold text-slate-300 mb-2">Upload Test Image</h3>
+                                <p className="text-slate-500 max-w-xs">
+                                    Drop a cropped text image here to analyze pixels.
+                                </p>
+                            </>
+                        )}
+                    </div>
+
+                    <button
+                        onClick={runAnalysis}
+                        disabled={!file || isAnalyzing}
+                        className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-all ${!file
+                                ? "bg-slate-800 text-slate-500 cursor-not-allowed"
+                                : isAnalyzing
+                                    ? "bg-indigo-500/50 text-indigo-200 cursor-wait"
+                                    : "bg-indigo-500 hover:bg-indigo-400 text-white shadow-lg shadow-indigo-500/20 hover:scale-[1.02]"
+                            }`}
+                    >
+                        {isAnalyzing ? (
+                            <><Loader2 className="w-6 h-6 animate-spin" /> Analyzing...</>
+                        ) : (
+                            <><FlaskConical className="w-6 h-6" /> Run Pixel Analysis</>
+                        )}
+                    </button>
+
+                    {/* Instructions */}
+                    <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-6">
+                        <h4 className="flex items-center gap-2 font-bold text-amber-400 mb-2">
+                            <Eye className="w-5 h-5" /> What to look for:
+                        </h4>
+                        <ul className="list-disc list-inside text-sm text-slate-400 space-y-1 ml-1">
+                            <li><b>Binary Mask:</b> Should be pure black/white using Otsu. Text should be white (255).</li>
+                            <li><b>Contours:</b> Red lines should outline every letter perfectly.</li>
+                            <li><b>Data:</b> Check if `density` and `estimated_font_size` make sense.</li>
+                        </ul>
+                    </div>
+                </div>
+
+                {/* Right: Results */}
+                <div className="space-y-6">
+                    {!result ? (
+                        <div className="h-full min-h-[400px] bg-slate-900/50 rounded-3xl border border-slate-800 flex items-center justify-center text-slate-600">
+                            Waiting for analysis...
+                        </div>
+                    ) : (
+                        <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="space-y-6"
+                        >
+                            {/* Visual Debug */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <DebugCard title="Binary Mask (Otsu)" src={`http://localhost:8000${result.mask_url}`} />
+                                <DebugCard title="Contours (Letters)" src={`http://localhost:8000${result.contours_url}`} />
+                            </div>
+
+                            {/* Data Panel */}
+                            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+                                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                    <Search className="w-5 h-5 text-indigo-400" />
+                                    Analysis Data (JSON)
+                                </h3>
+                                <pre className="bg-black/50 p-4 rounded-xl text-xs text-indigo-300 font-mono overflow-auto max-h-[300px] border border-slate-800">
+                                    {JSON.stringify(result.style, null, 2)}
+                                </pre>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <Metric label="Font Size" value={`${result.style.estimated_font_size}px`} />
+                                    <Metric label="Is Bold?" value={result.style.is_bold ? "YES" : "NO"} active={result.style.is_bold} />
+                                    <Metric label="Density" value={result.style.density.toFixed(3)} />
+                                    <Metric label="Format" value={result.style.is_inverted ? "Inverted (White)" : "Standard (Black)"} />
+                                </div>
+                            </div>
+                        </motion.div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function DebugCard({ title, src }: { title: string, src: string }) {
+    return (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden group">
+            <div className="relative aspect-video bg-black/50">
+                <Image
+                    src={src}
+                    alt={title}
+                    fill
+                    className="object-contain"
+                    unoptimized // Important for local backend images
+                />
+            </div>
+            <div className="p-3 border-t border-slate-800 bg-slate-900">
+                <p className="text-sm font-bold text-slate-300 text-center">{title}</p>
+            </div>
+        </div>
+    );
+}
+
+function Metric({ label, value, active = false }: { label: string, value: string | number, active?: boolean }) {
+    return (
+        <div className={`p-3 rounded-xl border ${active ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-slate-800/50 border-slate-700'}`}>
+            <p className="text-xs text-slate-500 uppercase font-bold">{label}</p>
+            <p className={`text-lg font-mono font-bold ${active ? 'text-emerald-400' : 'text-slate-200'}`}>{value}</p>
+        </div>
     );
 }

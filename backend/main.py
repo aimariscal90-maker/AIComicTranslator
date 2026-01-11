@@ -254,6 +254,65 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
         traceback.print_exc()
         job_manager.update_job(job_id, status="failed", error=str(e))
 
+
+@app.post("/analyze-style")
+async def analyze_style_debug(file: UploadFile = File(...)):
+    """
+    Debug endpoint for Phase 1 (Pixel Analysis).
+    Returns JSON style data + paths to debug images (Binary Mask, Contours).
+    """
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(400, "Invalid file type")
+    
+    ext = file.filename.split(".")[-1]
+    unique_name = f"debug_{uuid.uuid4()}.{ext}"
+    path = os.path.join(UPLOAD_DIR, unique_name)
+    
+    with open(path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+        
+    img = cv2.imread(path)
+    if img is None:
+        raise HTTPException(400, "Could not read image")
+        
+    # Analyze the WHOLE image as if it were a crop (ROI)
+    # Since the user uploads a cropped bubble or text area
+    h, w = img.shape[:2]
+    # bbox = [x1, y1, x2, y2]
+    fake_bbox = [0, 0, w, h]
+    
+    analyzer = StyleAnalyzer()
+    
+    # 1. Run Analysis
+    # We call internal methods to get debug images which aren't usually returned by analyze_roi
+    # Logic copied from analyze_roi but keeping intermediate images
+    
+    # Binarization
+    mask, is_inverted = analyzer._binarize_otsus(img) # New method name
+    
+    # Contours
+    center_contours = analyzer.get_text_contours(mask)
+    contours = center_contours # For display
+    
+    # Save debug images
+    mask_filename = f"mask_{unique_name}.png"
+    cv2.imwrite(os.path.join(UPLOAD_DIR, mask_filename), mask)
+    
+    contour_img = img.copy()
+    cv2.drawContours(contour_img, contours, -1, (0, 0, 255), 2)
+    contours_filename = f"contours_{unique_name}.png"
+    cv2.imwrite(os.path.join(UPLOAD_DIR, contours_filename), contour_img)
+    
+    # Full Analysis Data
+    style_data = analyzer.analyze_roi(img, fake_bbox)
+    
+    return {
+        "style": style_data,
+        "original_url": f"/uploads/{unique_name}",
+        "mask_url": f"/uploads/{mask_filename}",
+        "contours_url": f"/uploads/{contours_filename}"
+    }
+
 # --- ENDPOINTS ---
 
 @app.get("/")
