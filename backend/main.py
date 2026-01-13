@@ -134,46 +134,76 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
                         bubble['text'] = res.get('text', '')
                         bubble['clean_text'] = bubble['text'].replace('\n', ' ')
                         
-                        # PREMIUM: Style Analysis
+                            # PREMIUM: Style Analysis
                         if mode == "premium":
                             try:
                                 style = style_analyzer.analyze_roi(img_cv, bubble['bbox'])
                                 
-                                # Font Matching (Day 21 / Phase 2)
-                                from services.font_matcher import FontMatcher
-                                font_matcher = FontMatcher()
-                                font_name = font_matcher.match_font(img_cv, style)
-                                
-                                # --- VERIFICATION LOGS (DAYS 1-6) ---
-                                print(f"\n🔍 [SMART-TYPO] Bubble Analysis:")
-                                print(f"   🎨 [Day 2 Color] Detectado: {style.get('text_color')} {'(Inverted)' if style.get('is_inverted') else ''}")
-                                print(f"   📏 [Day 3 Size]  Estimado:  {style.get('estimated_font_size')}px")
-                                print(f"   ⚖️ [Day 4 Bold]  Density:   {style.get('density'):.2f} (Bold: {style.get('is_bold')})")
-                                print(f"   🧠 [Day 6 Class] Font:      {font_name}")
-                                print(f"   ----------------------------------------")
-
-                                # Inject Style into Bubble for Renderer
-                                bubble['text_color'] = style.get('text_color', '#000000')
-                                bubble['estimated_font_size'] = style.get('estimated_font_size', 20)
-                                bubble['font'] = font_name
-                                bubble['font_path'] = font_matcher.get_font_path(font_name)
-                                
-                                # Store raw style for debug
+                                # Store raw style for Phase 2 (Font Matching)
+                                # We defer matching until we have semantic tone from translation
                                 bubble['style_data'] = style
+                                
+                                # Verification Log (Partial)
+                                print(f"   🎨 [Day 2 Color] Detectado: {style.get('text_color')}")
+                                print(f"   📏 [Day 3 Size]  Estimado:  {style.get('font_size_pt')}pt")
+                                print(f"   ⚖️ [Day 4 Typo]  Bold: {style.get('is_bold')} / Italic: {style.get('is_italic')}")
+
+                                # Inject basic visual props needed for renderer fallback
+                                bubble['text_color'] = style.get('text_color', '#000000')
+                                bubble['estimated_font_size'] = style.get('font_size_px', 20)
+                                bubble['text_angle'] = style.get('rotation_angle', 0)
+                                
                             except Exception as e:
                                 print(f"Style Analysis failed for bubble: {e}")
 
-            # Translate
-            job_manager.update_job(job_id, progress=60, step="Translating 🤖")
+            # Translate & Classify (Day 06)
+            job_manager.update_job(job_id, progress=60, step="Translating & Analyzing Tone 🧠")
             translator = TranslatorService(target_lang='es')
             texts = [b.get('clean_text', '') for b in bubbles if b.get('clean_text')]
+            
             if texts:
-                translations, _ = translator.translate_batch_with_context(texts)
+                # Returns list of dicts: [{'translation': 'Hola', 'type': 'scream'}, ...]
+                results, _ = translator.translate_batch_with_context(texts)
+                
                 t_idx = 0
+                
+                # --- PHASE 2: FONT MATCHING (Visual + Semantic) ---
+                from services.font_matcher import FontMatcher
+                font_matcher = FontMatcher()
+                
                 for b in bubbles:
                     if b.get('clean_text'):
-                        b['translation'] = translations[t_idx] if t_idx < len(translations) else ""
-                        t_idx += 1
+                        # 1. Assign Translation
+                        if t_idx < len(results):
+                            res = results[t_idx]
+                            b['translation'] = res.get('translation', '')
+                            b['bubble_type'] = res.get('type', 'speech')
+                            t_idx += 1
+                        else:
+                            b['translation'] = ""
+                            b['bubble_type'] = "speech"
+                            
+                        # 2. Match Font (If Premium)
+                        if mode == "premium" and 'style_data' in b:
+                            # Re-extract crop for SSIM (Visual Matching)
+                            x1, y1, x2, y2 = map(int, b['bbox'])
+                            bubble_crop = img_cv[y1:y2, x1:x2]
+                            
+                            # Now we have all 4 signals: Style, Tone, Visual Image, Text
+                            font_name = font_matcher.match_font(
+                                b['style_data'], 
+                                bubble_type=b['bubble_type'],
+                                roi_image=bubble_crop,
+                                ocr_text=b['clean_text']
+                            )
+                            b['font'] = font_name
+                            b['font_path'] = font_matcher.get_font_path(font_name)
+                            
+                            print(f"   🧠 [Day 7 SSIM] '{b['clean_text'][:10]}...' -> Type: {b['bubble_type'].upper()} -> Font: {font_name}")
+                    else:
+                        # Empty bubble
+                        b['font'] = "AnimeAce.ttf" # Default
+                        b['font_path'] = font_matcher.get_font_path("AnimeAce.ttf")
             
             # Inpaint
             job_manager.update_job(job_id, progress=75, step="Cleaning Text 🎨")

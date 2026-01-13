@@ -81,80 +81,88 @@ class TranslatorService:
 
     def translate_batch_with_context(self, texts_list):
         """
-        Traduce una lista de textos manteniendo coherencia contextual.
+        Translates a list of texts maintaining context and detecting bubble type.
         
-        Input: ["Hello!", "How are you?", "Fine, thanks!"]
-        Output: ["¡Hola!", "¿Qué tal?", "¡Bien, gracias!"]
-        
-        Día 24: Traducción con contexto de página completa.
+        Output: (results_list, provider)
+        results_list: [{'translation': "Hola", 'type': "speech"}, ...]
         """
         if not texts_list or not any(t.strip() for t in texts_list):
-            return [""] * len(texts_list), "None"
+            return [{"translation": "", "type": "speech"}] * len(texts_list), "None"
         
         if not self.model:
-            # Fallback a traducción individual si no hay modelo
             print("Gemini not available, falling back to individual translation...")
-            results = [self.translate(text)[0] for text in texts_list]
+            results = [{"translation": self.translate(text)[0], "type": "speech"} for text in texts_list]
             return results, "Google Translate (Batch Fallback)"
         
         try:
-            # Formatear textos con números
-            texts_formatted = "\n".join([f"{i+1}. {text}" for i, text in enumerate(texts_list) if text.strip()])
+            # Format texts for prompt
+            texts_formatted = "\n".join([f"{i+1}. \"{text}\"" for i, text in enumerate(texts_list) if text.strip()])
             
-            # Prompt contextual mejorado
-            prompt = f"""Act as a professional comic book translator specialized in manga/comics.
+            # Smart Prompt seeking JSON
+            prompt = f"""Act as a professional comic book translator.
+Translate the following dialogues to Spanish (Spain).
+Classify the BUBBLE TYPE based on the text/tone.
 
-Translate the following dialogues from English (or source language) to Spanish (Spain).
+Valid Types: "speech", "scream", "thought", "narration", "sfx", "whisper"
 
-IMPORTANT RULES:
-- Maintain CONSISTENT TONE between related dialogues (formal/informal)
-- Preserve slang, sarcasm, and humor
-- Keep character voice consistency
-- For sound effects (SFX/onomatopoeia like BOOM, SPLASH), prepend '[SFX]'
-- Be concise to fit speech bubbles
-- Translate naturally, not literally
-
-Dialogues to translate:
+INPUT TEXTS:
 {texts_formatted}
 
-Respond ONLY with the translations, one per line, in the SAME ORDER.
-Do NOT include line numbers, explanations, or extra text.
-Just the pure translations."""
+INSTRUCTIONS:
+- Translate maintaining slang and character voice.
+- Return a JSON ARRAY of objects.
+- Keys: "translation" (string), "type" (string).
+
+Example JSON:
+[
+  {{ "translation": "¡Hola!", "type": "speech" }},
+  {{ "translation": "¡¡MUERE!!", "type": "scream" }}
+]
+
+Respond ONLY with the JSON array."""
 
             response = self.model.generate_content(prompt)
-            translations_text = response.text.strip()
+            response_text = response.text.strip()
             
-            # Parsear respuesta (limpiar números si los añadió)
-            lines = translations_text.split('\n')
-            translations = []
+            # Clean Markdown
+            cleaned_json = response_text.replace('```json', '').replace('```', '').strip()
             
-            for line in lines:
-                # Limpiar números al inicio (ej: "1. Hola" -> "Hola")
-                cleaned = line.strip()
-                if cleaned and cleaned[0].isdigit():
-                    # Quitar "1. " o "1) " o "1 - "
-                    parts = cleaned.split('. ', 1)
-                    if len(parts) > 1:
-                        cleaned = parts[1]
-                    else:
-                        parts = cleaned.split(') ', 1)
-                        if len(parts) > 1:
-                            cleaned = parts[1]
+            import json
+            try:
+                data = json.loads(cleaned_json)
                 
-                translations.append(cleaned)
-            
-            # Asegurarse de que tenemos el mismo número de traducciones
-            while len(translations) < len(texts_list):
-                translations.append("")
-            
-            return translations[:len(texts_list)], "Gemini Flash (Contextual)"
+                # Validation
+                if not isinstance(data, list): raise ValueError("Not a list")
+                
+                # Fill missing or ensure structure
+                final_results = []
+                data_idx = 0
+                
+                for original_text in texts_list:
+                    if original_text.strip():
+                        if data_idx < len(data):
+                            item = data[data_idx]
+                            trans = item.get("translation", "")
+                            b_type = item.get("type", "speech").lower()
+                            final_results.append({"translation": trans, "type": b_type})
+                            data_idx += 1
+                        else:
+                            final_results.append({"translation": "", "type": "speech"})
+                    else:
+                         final_results.append({"translation": "", "type": "speech"})
+                         
+                return final_results, "Gemini Flash (Smart JSON)"
+                
+            except json.JSONDecodeError:
+                print(f"[TRANSLATE ERROR] JSON parse failed. Raw: {cleaned_json[:100]}...")
+                # Fallback: Treat as simple text response? No, too risky. Fallback to basic.
+                raise Exception("JSON Parse Error")
             
         except Exception as e:
             print(f"Batch translation error: {e}")
-            print("Falling back to individual translation...")
-            # Fallback a traducción individual
-            results = [self.translate(text)[0] for text in texts_list]
-            return results, "Gemini Flash (Individual Fallback)"
+            # Fallback to individual
+            results = [{"translation": self.translate(text)[0], "type": "speech"} for text in texts_list]
+            return results, "Gemini (Fallback Individual)"
 
     def classify_bubbles_batch(self, texts_list):
         """
