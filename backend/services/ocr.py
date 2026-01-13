@@ -27,6 +27,7 @@ class OCRService:
 
         # El primer elemento de text_annotations es todo el texto
         full_text = response.full_text_annotation.text if response.full_text_annotation else ""
+        print(f"   👀 [GOOGLE VISION API] Detected Text: {full_text[:50]}...") # Debug User Verify
         
         # Extraer bloques de palabras para la mascara fina (Method B)
         blocks = []

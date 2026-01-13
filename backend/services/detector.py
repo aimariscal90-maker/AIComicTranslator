@@ -57,6 +57,11 @@ class BubbleDetector:
             })
 
         print(f"Detected {len(boxes_data)} bubbles.")
+        
+        # Sort by Reading Order (Top->Bottom, Left->Right)
+        # Using simple Y-major sort. Refine for complex layouts later if needed.
+        boxes_data.sort(key=lambda b: (b['bbox'][1], b['bbox'][0]))
+        
         return boxes_data
 
     def _get_bubble_contour(self, img, bbox):
@@ -167,14 +172,18 @@ class BubbleDetector:
         for item in boxes_data:
             x1, y1, x2, y2 = map(int, item['bbox'])
             
-            # Dibujar Poligono
+            # Dibujar Poligono o Caja Rellena
+            color = (255, 255, 0) # Cyan (Light Blue)
+            
             if item.get('polygon') and len(item['polygon']) > 0:
                 pts = np.array(item['polygon'], np.int32)
                 pts = pts.reshape((-1, 1, 2))
-                color = (255, 100, 0) # Azul
                 cv2.fillPoly(overlay, [pts], color)
+            else:
+                # Fallback: Rellenar la caja entera si no hay poligono preciso
+                cv2.rectangle(overlay, (x1, y1), (x2, y2), color, -1)
                 
-            # Caja
+            # Caja Borde (Verde)
             cv2.rectangle(overlay, (x1, y1), (x2, y2), (0, 255, 0), 2)
             
             # Etiqueta

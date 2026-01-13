@@ -1,5 +1,14 @@
 import os
-import google.generativeai as genai
+import warnings
+# Suppress the deprecation warning for now to keep logs clean
+warnings.filterwarnings("ignore", category=FutureWarning, module="google.generativeai")
+
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
+    print("WARNING: google.generativeai not installed. Translation disabled.")
+
 from dotenv import load_dotenv
 
 # Load env vars from backend/.env
@@ -13,13 +22,17 @@ class TranslatorService:
         if not self.api_key:
             print("WARNING: GEMINI_API_KEY not found in .env. Translation will fail.")
             self.model = None
+        elif genai is None:
+            print("WARNING: Gemini Library missing. Translation disabled.")
+            self.model = None
         else:
             try:
                 genai.configure(api_key=self.api_key)
-                # Available models: gemini-flash-latest (Usually 1.5 Flash)
-                # Usamos el alias latest para asegurar compatibilidad free tier
-                self.model = genai.GenerativeModel('gemini-flash-latest')
-                print("Gemini Translator initialized successfully (Model: gemini-flash-latest).")
+                # Available models (2026): gemini-2.0-flash, gemini-flash-latest
+                # Fixed 404 by using correct name found in introspection.
+                model_name = 'gemini-2.0-flash'
+                self.model = genai.GenerativeModel(model_name)
+                print(f"Gemini Translator initialized with: {model_name}")
             except Exception as e:
                 print(f"Error initializing Gemini: {e}")
                 self.model = None
@@ -40,7 +53,6 @@ class TranslatorService:
                 fallback = GoogleTranslator(source='auto', target='es')
                 return fallback.translate(text), "Google Translate (Basic)"
             except:
-                # If everything fails, return mock translation to prove pipeline works
                 return f"[ES] {text}", "Mock Translator"
 
         try:
@@ -73,7 +85,8 @@ class TranslatorService:
                 # Fallback
                 from deep_translator import GoogleTranslator
                 fallback = GoogleTranslator(source='auto', target='es')
-                return fallback.translate(text), "Google Translate (Fallback)"
+                err_clean = str(e).split(' ')[0] if ' ' in str(e) else str(e)[:10]
+                return fallback.translate(text), f"Google (Err: {err_clean})"
                 
         except Exception as e:
             print(f"Global Translation error: {e}")
@@ -161,8 +174,21 @@ Respond ONLY with the JSON array."""
         except Exception as e:
             print(f"Batch translation error: {e}")
             # Fallback to individual
-            results = [{"translation": self.translate(text)[0], "type": "speech"} for text in texts_list]
-            return results, "Gemini (Fallback Individual)"
+            results = []
+            providers = []
+            for text in texts_list:
+                t_text, t_prov = self.translate(text)
+                results.append({"translation": t_text, "type": "speech"})
+                providers.append(t_prov)
+            
+            # Determine true provider
+            google_err = next((p for p in providers if "Google" in p), None)
+            if google_err:
+                final_prov = f"Fallback: {google_err}"
+            else:
+                final_prov = "Gemini (Fallback Individual)"
+                
+            return results, final_prov
 
     def classify_bubbles_batch(self, texts_list):
         """

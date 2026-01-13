@@ -11,7 +11,8 @@ class StyleAnalyzer:
             cls._instance = super(StyleAnalyzer, cls).__new__(cls)
         return cls._instance
 
-    def analyze_roi(self, image: np.ndarray, bbox: list) -> Dict[str, Any]:
+    # [Day 13] Updated Signature
+    def analyze_roi(self, image: np.ndarray, bbox: list, polygon: list = None) -> Dict[str, Any]:
         """
         [Day 01] Analysis Entry Point.
         Extracts pixel-level data from a cropped text bubble.
@@ -26,18 +27,43 @@ class StyleAnalyzer:
 
         roi = image[y1:y2, x1:x2]
         
+        # [Day 13] Pre-Processing: Mask Background used Mean Bubble Color
+        # If we have a polygon, we replace the OUTSIDE (detected noise) with the MEAN COLOR of the INSIDE.
+        # Why? Because Otsu's defaults to separating "Dark Background" vs "Light Bubble".
+        # We want it to separate "Light Bubble" vs "White Text".
+        # By making the Background = Bubble Color, the only variance left is Text vs Bubble.
+        poly_mask = None
+        if polygon and len(polygon) > 2:
+            h_roi, w_roi = roi.shape[:2]
+            poly_mask = np.zeros((h_roi, w_roi), dtype=np.uint8)
+            local_pts = np.array([[p[0]-x1, p[1]-y1] for p in polygon], dtype=np.int32)
+            cv2.fillPoly(poly_mask, [local_pts], 255)
+            
+            # Calculate mean color inside mask
+            mean_val = cv2.mean(roi, mask=poly_mask)[:3]
+            mean_color = np.array(mean_val, dtype=np.uint8)
+            
+            # Fill outside with mean color
+            bg_fill = np.full_like(roi, mean_color)
+            roi = np.where(poly_mask[..., None] == 255, roi, bg_fill)
+        
         # 2. Binarization (Otsu's Method) - The Core of Day 01
         # We need to answer: Where is the text?
         binary_mask, is_inverted = self._binarize_otsus(roi)
+        
+        # Re-Apply Clean Mask to result (to cut straight transitions)
+        if poly_mask is not None:
+             binary_mask = cv2.bitwise_and(binary_mask, binary_mask, mask=poly_mask)
         
         # 3. Contour Extraction - Identifying Letters
         contours = self.get_text_contours(binary_mask)
         
         # 4. Basic Attributes
-        # [Day 02] Color Analysis (K-Means)
-        text_color_hex = self._analyze_color(roi, binary_mask)
+         
+        # 3. Analyze Color
+        text_color_hex = self._analyze_color(roi, binary_mask, is_inverted)
         
-        # [Day 02] Stroke Analysis (Morphology)
+        # 4. Analyze Stroke
         stroke_color, stroke_width = self._analyze_stroke(roi, binary_mask, text_color_hex)
         
         # [Day 03] Geometry (Size & Leading)
@@ -54,8 +80,10 @@ class StyleAnalyzer:
             
             # Day 02 - Color & Stroke
             "text_color": text_color_hex,
+            "bg_color": self._analyze_background(roi, binary_mask), # New
             "stroke_color": stroke_color, 
-            "stroke_width": stroke_width,       
+            "stroke_width": stroke_width,
+            "has_stroke": stroke_width > 0,       
             
             # Font Info
             "font_category": "normal",
@@ -251,7 +279,7 @@ class StyleAnalyzer:
             
         return valid_contours
 
-    def _analyze_color(self, roi: np.ndarray, mask: np.ndarray) -> str:
+    def _analyze_color(self, roi: np.ndarray, mask: np.ndarray, is_inverted: bool = False) -> str:
         """
         [Day 02] Extract accurate Text Color using K-Means.
         Erodes mask to capture core ink pixels, ignoring anti-aliasing edges.
@@ -266,9 +294,22 @@ class StyleAnalyzer:
             
         # 2. Extract Pixels
         coords = np.where(core_mask == 255)
-        if len(coords[0]) < 10: return "#000000"
+        # Default based on polarity
+        default_color = "#FFFFFF" if is_inverted else "#000000"
+        
+        if len(coords[0]) < 10: return default_color
         
         pixels = roi[coords[0], coords[1]]
+        
+        # [Fix Day 10] Rule 2: Dark Core (Nuclear Option)
+        # If > 30% of the pixels are dark, it's black. Period.
+        # This completely ignores pink/green noise on the edges.
+        if not is_inverted:
+            # Calculate brightness (Mean of BGR) for every pixel
+            brightness = np.mean(pixels, axis=1)
+            dark_count = np.sum(brightness < 60)
+            if len(pixels) > 0 and (dark_count / len(pixels) > 0.30):
+                 return "#000000"
         
         # 3. K-Means (k=2) to separate Main Ink vs Shadows/Highlights
         try:
@@ -280,15 +321,95 @@ class StyleAnalyzer:
             count0 = np.sum(labels == 0)
             count1 = np.sum(labels == 1)
             
-            dominant_idx = 0 if count0 > count1 else 1
-            dominant_color = kmeans.cluster_centers_[dominant_idx].astype(int)
+            # Cluster Centers
+            c0 = kmeans.cluster_centers_[0]
+            c1 = kmeans.cluster_centers_[1]
             
+            if is_inverted:
+                # LIGHT TEXT (White/Yellow) on DARK BG
+                # Priority 1: Brightness. Pick the lighter color.
+                bright0 = np.mean(c0)
+                bright1 = np.mean(c1)
+                dominant_idx = 0 if bright0 > bright1 else 1
+            else:
+                # DARK TEXT (Black/Red) on LIGHT BG
+                # Priority 1: Saturation (Vibrance) vs Noise
+                sat0 = max(c0) - min(c0)
+                sat1 = max(c1) - min(c1)
+                
+                total_pixels = count0 + count1
+                if total_pixels == 0: return "#000000"
+                
+                ratio0 = count0 / total_pixels
+                ratio1 = count1 / total_pixels
+                
+                # If one cluster is significantly more colorful
+                # [Fix Day 10] Rule 1: Increase Saturation Threshold (30 -> 80)
+                if abs(sat0 - sat1) > 80:
+                    cand_idx = 0 if sat0 > sat1 else 1
+                    cand_ratio = ratio0 if cand_idx == 0 else ratio1
+                    
+                    if cand_ratio > 0.20:
+                        # [Fix Day 10] Noise Suppression:
+                        # If candidate is Bright (Pink Noise) but alternative is Dark (Black Ink),
+                        # reject candidate unless it's the majority (> 50%).
+                        cand_color = kmeans.cluster_centers_[cand_idx]
+                        other_color = kmeans.cluster_centers_[1 - cand_idx]
+                        
+                        cand_bright = np.mean(cand_color)
+                        other_bright = np.mean(other_color)
+                        
+                        # If "Saturated" is much brighter than "Unsaturated" (likely Black), 
+                        # treat "Saturated" as noise artifacts if it's not dominant.
+                        if cand_bright > (other_bright + 40) and other_bright < 80:
+                             if cand_ratio > 0.50:
+                                 dominant_idx = cand_idx
+                             else:
+                                 # Fallback to dark color (which is likely the real ink)
+                                 dominant_idx = 1 - cand_idx
+                        else:
+                             dominant_idx = cand_idx
+                    else:
+                        dominant_idx = 0 if count0 > count1 else 1
+                else:
+                    dominant_idx = 0 if count0 > count1 else 1
+
+            dominant_color = kmeans.cluster_centers_[dominant_idx].astype(int)
             b, g, r = dominant_color
+            
+            # [Fix Day 09] Force Dark-Black Snapping
+            if not is_inverted and max(b, g, r) < 60:
+                 return "#000000"
+            
+            # [Fix Day 10] Force White Snapping
+            if is_inverted and min(b, g, r) > 200:
+                 return "#FFFFFF"
+
             return "#{:02x}{:02x}{:02x}".format(r, g, b)
             
         except Exception as e:
             print(f"K-Means Color failed: {e}")
-            return "#000000"
+            return default_color
+
+    def _analyze_background(self, roi: np.ndarray, text_mask: np.ndarray) -> str:
+        """
+        [Day 02 Refined] Extract Background Color.
+        """
+        # Inverse of text mask is background
+        bg_mask = cv2.bitwise_not(text_mask)
+        
+        coords = np.where(bg_mask == 255)
+        if len(coords[0]) < 10: return "#FFFFFF" # Default White
+        
+        pixels = roi[coords[0], coords[1]]
+        
+        # Simple Median often works best for background to ignore noise
+        try:
+             bg_median = np.median(pixels, axis=0).astype(int)
+             b, g, r = bg_median
+             return "#{:02x}{:02x}{:02x}".format(r, g, b)
+        except:
+             return "#FFFFFF"
 
     def _analyze_stroke(self, roi: np.ndarray, text_mask: np.ndarray, text_color_hex: str) -> Tuple[str, int]:
         """

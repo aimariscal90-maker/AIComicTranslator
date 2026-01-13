@@ -137,7 +137,8 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
                             # PREMIUM: Style Analysis
                         if mode == "premium":
                             try:
-                                style = style_analyzer.analyze_roi(img_cv, bubble['bbox'])
+                                # [Day 13] Pass Polygon (Blue Blob) to mask background noise (Pink Wall)
+                                style = style_analyzer.analyze_roi(img_cv, bubble['bbox'], bubble.get('polygon'))
                                 
                                 # Store raw style for Phase 2 (Font Matching)
                                 # We defer matching until we have semantic tone from translation
@@ -150,6 +151,7 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
 
                                 # Inject basic visual props needed for renderer fallback
                                 bubble['text_color'] = style.get('text_color', '#000000')
+                                bubble['bg_color'] = style.get('bg_color', '#FFFFFF') # Fix: Pass BG Color
                                 bubble['estimated_font_size'] = style.get('font_size_px', 20)
                                 bubble['text_angle'] = style.get('rotation_angle', 0)
                                 
@@ -200,6 +202,16 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
                             b['font_path'] = font_matcher.get_font_path(font_name)
                             
                             print(f"   🧠 [Day 7 SSIM] '{b['clean_text'][:10]}...' -> Type: {b['bubble_type'].upper()} -> Font: {font_name}")
+                        else:
+                            # STANDARD MODE: Use default comic font for everything
+                            font_name = "AnimeAce.ttf" 
+                            b['font'] = font_name
+                            b['font_path'] = font_matcher.get_font_path(font_name)
+                            # Basic props for standard render
+                            b['text_color'] = "#000000"
+                            b['bg_color'] = "#FFFFFF" 
+                            b['estimated_font_size'] = 18 # Default size
+                            print(f"   🔹 [Standard] '{b['clean_text'][:10]}...' -> Font: {font_name}")
                     else:
                         # Empty bubble
                         b['font'] = "AnimeAce.ttf" # Default
@@ -464,3 +476,245 @@ async def update_bubble(filename: str, req: UpdateBubbleModel):
         return {"final_url": f"/uploads/final_{filename}.jpg"}
     except Exception as e:
         raise HTTPException(500, str(e))
+
+@app.post("/debug-pipeline")
+async def debug_pipeline(file: UploadFile = File(...)):
+    """
+    [Lab Tool] Runs Detection -> OCR -> Style -> Font -> Inpainting -> Rendering.
+    Returns detailed analysis + Preview Image URL.
+    """
+    # Helper to log
+    def log_debug(msg):
+        print(msg)
+        try:
+            with open(os.path.join(UPLOAD_DIR, "debug_log.txt"), "a") as f:
+                f.write(f"{datetime.now()}: {msg}\n")
+        except: pass
+
+    log_debug(f"[DEBUG] === PIPELINE START: {file.filename} ===")
+
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(400, "Invalid file type")
+    
+    ext = file.filename.split(".")[-1]
+    unique_name = f"debug_pipe_{uuid.uuid4()}.{ext}"
+    path = os.path.join(UPLOAD_DIR, unique_name)
+    
+    with open(path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+        
+    # 1. Detect
+    detector = BubbleDetector()
+    bubbles = detector.detect(path)
+    
+    # Draw boxes
+    debug_box_name = f"debug_boxes_{unique_name}"
+    detector.draw_boxes(path, bubbles, os.path.join(UPLOAD_DIR, debug_box_name))
+    
+    # 2. Analyze Loop
+    img_cv = cv2.imread(path)
+    ocr_service = OCRService()
+    style_analyzer = StyleAnalyzer()
+    from services.font_matcher import FontMatcher
+    font_matcher = FontMatcher()
+    
+    # [Day 13] Services for Preview
+    try:
+        from services.translator import TranslatorService
+        translator = TranslatorService(target_lang='es')
+    except Exception as e:
+        log_debug(f"[DEBUG] Failed to init Translator: {e}")
+        translator = None
+
+    remover = TextRemover()
+    renderer = TextRenderer()
+    
+    results = [] # detailed_steps
+    render_bubbles = [] # For Preview
+    
+    log_debug(f"[DEBUG] Services initialized. Detecting bubbles loop...")
+
+    # 2-PASS APPROACH FOR CONTEXT AWARENESS
+    processed_items = []
+    texts_to_translate = []
+    
+    # PASS 1: OCR & Prep
+    log_debug(f"[DEBUG] Pass 1: OCR & Data Collection...")
+    for i, b in enumerate(bubbles):
+        # ROI Crop
+        x1, y1, x2, y2 = map(int, b['bbox'])
+        if x1 < 0: x1 = 0
+        if y1 < 0: y1 = 0
+        if x2 > img_cv.shape[1]: x2 = img_cv.shape[1]
+        if y2 > img_cv.shape[0]: y2 = img_cv.shape[0]
+        
+        crop = img_cv[y1:y2, x1:x2]
+        
+        step_data = {
+            "id": i,
+            "bbox": b['bbox'],
+            "ocr_text": "Error/Empty",
+            "translation": "", 
+            "trans_provider": "Pending",
+            "style": {},
+            "font_match": "Pending",
+            "crop_url": ""
+        }
+        
+        if crop.size > 0:
+            # OCR
+            success, encoded = cv2.imencode('.jpg', crop)
+            if success:
+                try:
+                    res = ocr_service.detect_text(encoded.tobytes())
+                    text = res.get('text', '')
+                    step_data['ocr_text'] = text
+                    
+                    # VISUALIZE Checkpoints
+                    vis_crop = crop.copy()
+                    current_words = []
+                    if 'word_boxes' in res:
+                        bx, by = x1, y1
+                        for poly in res['word_boxes']:
+                            pts = np.array(poly, np.int32).reshape((-1, 1, 2))
+                            cv2.polylines(vis_crop, [pts], True, (0, 0, 255), 2)
+                            global_poly = [[pt[0] + bx, pt[1] + by] for pt in poly]
+                            current_words.append(global_poly)
+                    
+                    crop_name = f"crop_{i}_{unique_name}"
+                    cv2.imwrite(os.path.join(UPLOAD_DIR, crop_name), vis_crop)
+                    step_data['crop_url'] = f"/uploads/{crop_name}"
+
+                    if text.strip():
+                        processed_items.append({
+                            'index': i,
+                            'bubble': b,
+                            'crop': crop,
+                            'text': text,
+                            'current_words': current_words,
+                            'step_data': step_data
+                        })
+                        texts_to_translate.append(text)
+                    else:
+                         results.append(step_data) # Empty bubble result
+                except Exception as e:
+                     log_debug(f"[DEBUG] OCR Error {i}: {e}")
+                     step_data['ocr_text'] = f"Error: {e}"
+                     results.append(step_data)
+        else:
+             results.append(step_data)
+
+    # PASS 2: BATCH TRANSLATION
+    log_debug(f"[DEBUG] Pass 2: Batch Translation ({len(texts_to_translate)} items)...")
+    batch_translations = []
+    provider = "None"
+    
+    if texts_to_translate:
+        if translator:
+            try:
+                 batch_translations, provider = translator.translate_batch_with_context(texts_to_translate)
+            except Exception as e:
+                 log_debug(f"[DEBUG] Batch Trans Failed: {e}")
+                 provider = "Error"
+                 batch_translations = [{'translation': t, 'type': 'speech'} for t in texts_to_translate]
+        else:
+            provider = "Disabled"
+            batch_translations = [{'translation': t, 'type': 'speech'} for t in texts_to_translate]
+
+    # PASS 3: STYLE & RENDER
+    log_debug(f"[DEBUG] Pass 3: Style, Type & Render...")
+    for idx, item in enumerate(processed_items):
+        try:
+            b = item['bubble']
+            step_data = item['step_data']
+            crop = item['crop']
+            text = item['text']
+            
+            # Get Translation
+            trans_item = batch_translations[idx] if idx < len(batch_translations) else {'translation': text, 'type': 'speech'}
+            translation = trans_item.get('translation', text)
+            b_type = trans_item.get('type', 'speech')
+            
+            step_data['translation'] = translation
+            step_data['trans_provider'] = provider
+            step_data['bubble_type'] = b_type
+
+            # Style
+            style = style_analyzer.analyze_roi(img_cv, b['bbox'], b.get('polygon'))
+            step_data['style'] = style
+            
+            # Font Match
+            font = font_matcher.match_font(style, b_type, crop, text)
+            step_data['font_match'] = font
+            
+            # Mask
+            mask, _ = style_analyzer._binarize_otsus(crop)
+            mask_name = f"mask_{item['index']}_{unique_name}"
+            cv2.imwrite(os.path.join(UPLOAD_DIR, mask_name), mask)
+            step_data['mask_url'] = f"/uploads/{mask_name}"
+            
+            # Render Prep
+            rb = b.copy()
+            rb.update(style)
+            rb['font'] = font
+            rb['translation'] = translation
+            rb['text_color'] = style.get('text_color', '#000000')
+            rb['word_boxes'] = item['current_words']
+            
+            render_bubbles.append(rb)
+            results.append(step_data)
+        except Exception as e:
+            log_debug(f"[DEBUG] Processing Error Bubble {item['index']}: {e}")
+            results.append(item['step_data'])
+        
+    # Sort results by ID to keep order (since we processed non-empty separartely)
+    results.sort(key=lambda x: x['id'])
+
+    # --- PHASE 3: PREVIEW GENERATION ---
+    preview_url = None
+    log_debug(f"[DEBUG] Render Bubbles Count: {len(render_bubbles)}")
+    
+    if len(render_bubbles) > 0:
+        try:
+             preview_name = f"preview_{unique_name}"
+             preview_path = os.path.join(UPLOAD_DIR, preview_name)
+             
+             # 1. Inpaint
+             log_debug("[DEBUG] Starting Inpainting...")
+             if remover.model is None:
+                 log_debug("[DEBUG] ERROR: TextRemover model is None! Check backend logs.")
+             
+             # We use 'text' mode because we have 'word_boxes' from OCR.
+             remover.remove_text(path, render_bubbles, preview_path, mask_mode='text')
+             
+             if not os.path.exists(preview_path):
+                  log_debug(f"[DEBUG] ERROR: Preview file not created at {preview_path}")
+             
+             # 2. Render
+             log_debug("[DEBUG] Starting Rendering...")
+             if os.path.exists(preview_path):
+                 try:
+                    # Renderer expects: (input_path, list_of_bubbles, output_path)
+                    renderer.render_text(preview_path, render_bubbles, preview_path)
+                    preview_url = f"/uploads/{preview_name}"
+                    log_debug(f"[DEBUG] Preview saved at: {preview_url}")
+                 except Exception as re:
+                    log_debug(f"[DEBUG] Render error: {re}")
+                    import traceback
+                    with open(os.path.join(UPLOAD_DIR, "debug_log.txt"), "a") as f:
+                         traceback.print_exc(file=f)
+             else:
+                 log_debug("[DEBUG] Failed to load inpainted image for rendering")
+
+        except Exception as e:
+             log_debug(f"[DEBUG] Preview generation failed: {e}")
+             import traceback
+             with open(os.path.join(UPLOAD_DIR, "debug_log.txt"), "a") as f:
+                 traceback.print_exc(file=f)
+
+    return {
+        "original_url": f"/uploads/{unique_name}",
+        "annotated_url": f"/uploads/{debug_box_name}",
+        "bubbles": results,
+        "preview_url": preview_url
+    }

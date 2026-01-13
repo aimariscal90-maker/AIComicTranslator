@@ -39,7 +39,7 @@ class TextRenderer:
                         continue
                         
                     # Coordenadas
-                    x1, y1, x2, y2 = bubble['bbox']
+                    x1, y1, x2, y2 = [int(v) for v in bubble['bbox']]
                     w = x2 - x1
                     h = y2 - y1
                     
@@ -154,78 +154,86 @@ class TextRenderer:
                         # Note: The original code logic proceeds to drawing. Need to ensure loops logic matches.
 
                     # --- DIBUJAR ---
-                    leading = int(font_size * 0.2)
+                    
+                    # 1. Recuperar parametros de estilo (Day 08)
+                    style_data = bubble.get('style_data', {})
+                    angle = style_data.get('rotation_angle', 0)
+                    spacing_ratio = style_data.get('line_spacing', 1.2)
+                    
+                    # Calcular leading real para el dibujo
+                    leading_factor = max(0.0, spacing_ratio - 1.0) # 1.2 -> 0.2
+                    leading = int(font_size * leading_factor)
+                    
                     total_h = sum(final_line_heights) + (len(final_wrapped_lines) - 1) * leading
                     
-                    # Centro del rectangulo
+                    # Centro del rectangulo (Bounding Box Original)
                     center_x = x1 + w // 2
                     center_y = y1 + h // 2
                     
-                    # Origen de dibujo (top-left del bloque de texto completo)
-                    text_start_y = center_y - total_h // 2
+                    # --- LOGICA DE PADRES E HIJOS (Rotation vs Direct) ---
                     
-                    # Calcular ancho máximo real del bloque (para el parche)
-                    real_max_w = 0
-                    for line in final_wrapped_lines:
-                        bbox = draw_txt.textbbox((0, 0), line, font=final_font)
-                        lw = bbox[2] - bbox[0]
-                        if lw > real_max_w: real_max_w = lw
+                    should_rotate = abs(angle) > 5 # Solo rotar si es significativo
 
-                    # PARCHE BLANCO (Fondo Adaptativo)
-                    # Origen de dibujo (top-left del bloque de texto completo)
-                    text_start_y = center_y - total_h // 2
-                    
-                    # Calcular ancho máximo real del bloque (para el parche)
-                    real_max_w = 0
-                    for line in final_wrapped_lines:
-                        bbox = draw_txt.textbbox((0, 0), line, font=final_font)
-                        lw = bbox[2] - bbox[0]
-                        if lw > real_max_w: real_max_w = lw
-
-                    # PARCHE BLANCO (Fondo Adaptativo con Feathering/Blur)
-                    bg_color_rgb = bubble.get('bg_color', (255, 255, 255))
-                    bg_color_rgba = (bg_color_rgb[0], bg_color_rgb[1], bg_color_rgb[2], 255) # Opacidad base alta para el blur
-                    
-                    # Aumentamos padding ligeramente
-                    patch_padding = 2
-                    bg_x1 = center_x - real_max_w // 2 - patch_padding
-                    bg_y1 = text_start_y - patch_padding
-                    bg_x2 = center_x + real_max_w // 2 + patch_padding
-                    bg_y2 = text_start_y + total_h + patch_padding
-                    
-                    # Dibujar parche (Rounded Rectangle Solido sin Blur)
-                    h_patch = bg_y2 - bg_y1
-                    if is_rectangle:
-                        # Para cajas cuadradas, radio pequeño
-                        radius = 5
-                    else:
-                        # Para ovalos, radio grande para simular redondez
-                        radius = int(min(10, h_patch * 0.3))
-                    
-                    draw.rounded_rectangle([bg_x1, bg_y1, bg_x2, bg_y2], radius=radius, fill=bg_color_rgba)
-
-                    # Dibujar Texto
-                    text_fill = bubble.get('text_color', (0, 0, 0))
-                    if len(text_fill) == 3:
-                        text_fill = (text_fill[0], text_fill[1], text_fill[2], 255)
-                    else:
-                        text_fill = (0, 0, 0, 255)
-
-                    current_y = text_start_y
-                    for i, line in enumerate(final_wrapped_lines):
-                        # Centrar horizontalmente cada linea
-                        bbox = draw_txt.textbbox((0, 0), line, font=final_font)
-                        lw = bbox[2] - bbox[0]
-                        line_x = center_x - lw // 2
+                    if should_rotate:
+                        # Crear capa temporal grande para evitar recortes al rotar
+                        canvas_size_factor = 1.5
+                        canvas_w = int(w * canvas_size_factor) + 100
+                        canvas_h = int(h * canvas_size_factor) + 100
                         
-                        draw.text((line_x, current_y), line, font=final_font, fill=text_fill)
+                        # Layer temporal vacía
+                        layer = Image.new("RGBA", (canvas_w, canvas_h), (0,0,0,0))
+                        layer_draw = ImageDraw.Draw(layer)
                         
-                        current_y += final_line_heights[i] + leading
+                        # El centro de la layer temporal
+                        lc_x = canvas_w // 2
+                        lc_y = canvas_h // 2
+                        
+                        # Dibujar en el centro de la layer
+                        self._draw_bubble_content(
+                            layer_draw, 
+                            lc_x, lc_y, 
+                            final_wrapped_lines, 
+                            final_font, 
+                            final_line_heights, 
+                            leading, 
+                            total_h, 
+                            bubble, 
+                            is_rectangle
+                        )
+                        
+                        # Rotar (Negativo porque PIL rota anti-horario y angle suele ser horario o viceversa? 
+                        # minAreaRect da angulo geometrico. Probar negativo primero si sale al reves.)
+                        # Ajustaremos el signo según pruebas visuales. Usualmente OpenCV angle -> PIL rotate: 
+                        # Si OpenCV detecta 10 grados (horario), PIL necesita -10.
+                        rotated_layer = layer.rotate(angle, resample=Image.BICUBIC, expand=False) 
+                        
+                        # Pegar en la imagen original (componiendo alpha)
+                        # Coordenada top-left para pegar: Center_Original - (Canvas_Size / 2)
+                        paste_x = int(center_x - rotated_layer.width // 2)
+                        paste_y = int(center_y - rotated_layer.height // 2)
+                        
+                        img.alpha_composite(rotated_layer, (paste_x, paste_y))
+                        
+                    else:
+                        # Dibujo DIRECTO sobre la imagen principal (más rápido)
+                        self._draw_bubble_content(
+                            draw, 
+                            center_x, center_y, 
+                            final_wrapped_lines, 
+                            final_font, 
+                            final_line_heights, 
+                            leading, 
+                            total_h, 
+                            bubble, 
+                            is_rectangle
+                        )
 
                 # Guardar resultado
                 if img.mode == 'RGBA':
-                    img = img.convert('RGB')
-                img.save(output_path, quality=95)
+                    img_export = img.convert('RGB')
+                else:
+                    img_export = img
+                img_export.save(output_path, quality=95)
                 return True
 
         except Exception as e:
@@ -235,6 +243,113 @@ class TextRenderer:
             with open("render_error.log", "w") as f:
                 f.write(error_msg)
             return False
+
+    def _draw_bubble_content(self, draw_ctx, cx, cy, lines, font, heights, leading, total_h, bubble, is_rect):
+        """
+        Helper para dibujar texto y fondo centrado en (cx, cy).
+        """
+        # Calcular ancho máximo real
+        real_max_w = 0
+        for line in lines:
+            bbox = draw_ctx.textbbox((0, 0), line, font=font)
+            lw = bbox[2] - bbox[0]
+            if lw > real_max_w: real_max_w = lw
+
+        # Origen top-left del bloque de texto
+        text_start_y = cy - total_h // 2
+        
+        # --- FONDO (PATCH) ---
+        # --- FONDO (PATCH) ---
+        bg_raw = bubble.get('bg_color', (255, 255, 255))
+        
+        if isinstance(bg_raw, str) and bg_raw.startswith('#'):
+             h = bg_raw.lstrip('#')
+             if len(h) == 6:
+                  rgb = tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+                  bg_color_rgba = (rgb[0], rgb[1], rgb[2], 255)
+             else:
+                  bg_color_rgba = (255, 255, 255, 255)
+        elif isinstance(bg_raw, (list, tuple)) and len(bg_raw) >= 3:
+             bg_color_rgba = (bg_raw[0], bg_raw[1], bg_raw[2], 255)
+        else:
+             bg_color_rgba = (255, 255, 255, 255)
+        
+        patch_padding = 4 # Un poco mas generoso
+        bg_x1 = cx - real_max_w // 2 - patch_padding
+        bg_y1 = text_start_y - patch_padding
+        bg_x2 = cx + real_max_w // 2 + patch_padding
+        bg_y2 = text_start_y + total_h + patch_padding
+        
+        h_patch = bg_y2 - bg_y1
+        radius = 5 if is_rect else int(min(10, h_patch * 0.3))
+        
+        draw_ctx.rounded_rectangle([bg_x1, bg_y1, bg_x2, bg_y2], radius=radius, fill=bg_color_rgba)
+        
+        # --- TEXTO ---
+        text_raw = bubble.get('text_color', (0, 0, 0))
+        if isinstance(text_raw, str) and text_raw.startswith('#'):
+             h = text_raw.lstrip('#')
+             if len(h) == 6:
+                  rgb = tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+                  text_fill = (rgb[0], rgb[1], rgb[2], 255)
+             else:
+                  text_fill = (0, 0, 0, 255)
+        elif isinstance(text_raw, (list, tuple)) and len(text_raw) >= 3:
+             text_fill = (text_raw[0], text_raw[1], text_raw[2], 255)
+        else:
+             text_fill = (0, 0, 0, 255)
+
+        # --- EFECTOS (Day 09) ---
+        style_data = bubble.get('style_data', {})
+        is_bold = style_data.get('is_bold', False)
+        has_stroke = style_data.get('has_stroke', False)
+        stroke_color_hex = style_data.get('stroke_color', '#FFFFFF')
+        bubble_type = bubble.get('bubble_type', 'speech').lower()
+
+        final_stroke_width = 0
+        final_stroke_fill = None
+
+        # 1. Faux Bold (Si es negrita pero la fuente quizas no lo es tanto, o para reforzar)
+        if is_bold:
+            final_stroke_width = 1
+            final_stroke_fill = text_fill
+
+        # 2. Outline/Stroke (Prioritario sobre Faux Bold si hay conflicto de color, 
+        # pero si es el mismo color se suman? No, el stroke suele ser contraste)
+        # Si detectamos borde O es un SFX, aplicamos borde
+        if has_stroke or bubble_type in ['sfx', 'scream']:
+            # Calcular grosor relativo al tamaño de fuente
+            final_stroke_width = max(3, int(leading * 0.3)) if leading > 0 else 3
+            
+            # Color del borde
+            if stroke_color_hex.startswith('#'):
+                # Hex to Tuple
+                h = stroke_color_hex.lstrip('#')
+                if len(h) == 6:
+                    rgb = tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+                    final_stroke_fill = (rgb[0], rgb[1], rgb[2], 255)
+                else:
+                    final_stroke_fill = (255, 255, 255, 255) # White default
+            else:
+                final_stroke_fill = (255, 255, 255, 255)
+
+        current_y = text_start_y
+        for i, line in enumerate(lines):
+            # Centrar horizontalmente cada linea
+            bbox = draw_ctx.textbbox((0, 0), line, font=font, stroke_width=final_stroke_width)
+            lw = bbox[2] - bbox[0]
+            line_x = cx - lw // 2
+            
+            draw_ctx.text(
+                (line_x, current_y), 
+                line, 
+                font=font, 
+                fill=text_fill,
+                stroke_width=final_stroke_width,
+                stroke_fill=final_stroke_fill
+            )
+            
+            current_y += heights[i] + leading
 
     def _wrap_text_pixels(self, text, font, max_width, draw_ctx):
         """
