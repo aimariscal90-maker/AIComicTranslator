@@ -136,52 +136,75 @@ class TextRemover:
                 print(f"[INPAINTING] Fast mode failed: {e}. Falling back to LaMa.")
         # ------------------------------------------------
         
-        # 2. Preprocesar para LaMa
-        # Resize a multiplo de 8 
-        # (LaMa lo necesita para bajar/subir de resolucion en la red)
-        def pad_to_divisible(arr, divisor=8):
-            h, w = arr.shape[:2]
-            h_pad = (divisor - h % divisor) % divisor
-            w_pad = (divisor - w % divisor) % divisor
-            return np.pad(arr, ((0, h_pad), (0, w_pad), (0, 0)), mode='reflect') if arr.ndim == 3 else np.pad(arr, ((0, h_pad), (0, w_pad)), mode='reflect')
-
-        img_padded = pad_to_divisible(img)
-        mask_padded = pad_to_divisible(mask, 8)
+        # 2. SMART TILING INFERENCE (Optimization)
+        # Instead of processing the full high-res page, we iterate over bubbles,
+        # crop them with context, and run LaMa on the small patches.
         
-        # Normalize 0-1 and Tensor conversion
-        img_tensor = torch.from_numpy(img_padded).permute(2, 0, 1).float().div(255.0).to(self.device)
-        mask_tensor = torch.from_numpy(mask_padded).unsqueeze(0).float().to(self.device)
+        result_img = img.copy() # Work on a copy
         
-        # Agregar batch dimension
-        img_tensor = img_tensor.unsqueeze(0)
-        mask_tensor = mask_tensor.unsqueeze(0)
+        # Determine padding for context (pixels)
+        CONTEXT_PAD = 120 
         
-        # 3. Inferencia
-        with torch.no_grad():
-            # La entrada de big-lama.pt suele ser (image, mask) o solo image concatenada
-            # Dependiendo de como se exporto. 
-            # El modelo estandar de LaMa espera img y mask por separado o concatenados.
-            # Probemos la firma comun: model(img, mask)
-            try:
-                # Inpaint
-                inpainted = self.model(img_tensor, mask_tensor)
+        for i, bubble in enumerate(bboxes):
+            # Coordinates
+            x1, y1, x2, y2 = map(int, bubble['bbox'])
+            
+            # Add padding for context (LaMa needs context to hallucinate background)
+            bx1 = max(0, x1 - CONTEXT_PAD)
+            by1 = max(0, y1 - CONTEXT_PAD)
+            bx2 = min(w, x2 + CONTEXT_PAD)
+            by2 = min(h, y2 + CONTEXT_PAD)
+            
+            # Crop
+            crop_img = result_img[by1:by2, bx1:bx2] # Use result_img to support overlapping repairs
+            crop_mask = mask[by1:by2, bx1:bx2]
+            
+            # Skip if mask is empty in this region
+            if np.sum(crop_mask) == 0:
+                continue
                 
-                # A veces devuelve una lista o tupla
-                if isinstance(inpainted, (list, tuple)):
-                    inpainted = inpainted[0]
-                    
-            except Exception as e:
-                print(f"Inference error: {e}")
-                return
+            # Prepare LaMa Input (Divisible by 8)
+            def pad_to_divisible(arr, divisor=8):
+                ch, cw = arr.shape[:2]
+                h_pad = (divisor - ch % divisor) % divisor
+                w_pad = (divisor - cw % divisor) % divisor
+                if h_pad == 0 and w_pad == 0: return arr, 0, 0
+                
+                # Reflect padding best for textures
+                pad_width = ((0, h_pad), (0, w_pad), (0, 0)) if arr.ndim == 3 else ((0, h_pad), (0, w_pad))
+                return np.pad(arr, pad_width, mode='reflect'), h_pad, w_pad
 
-        # 4. Postprocesar
-        result_tensor = inpainted[0].permute(1, 2, 0).cpu().numpy()
-        result_tensor = np.clip(result_tensor * 255, 0, 255).astype(np.uint8)
-        
-        # Crop back to original size
-        result_img = result_tensor[:h, :w]
-        
-        # Guardar
+            img_p, hp, wp = pad_to_divisible(crop_img)
+            mask_p, _, _ = pad_to_divisible(crop_mask)
+            
+            # Tensor Conversion
+            img_t = torch.from_numpy(img_p).permute(2, 0, 1).float().div(255.0).to(self.device).unsqueeze(0)
+            mask_t = torch.from_numpy(mask_p).float().to(self.device).unsqueeze(0).unsqueeze(0) # 1x1xHxW
+            
+            try:
+                with torch.no_grad():
+                    inpainted_t = self.model(img_t, mask_t)
+                    # Handle tuple return
+                    if isinstance(inpainted_t, (list, tuple)):
+                        inpainted_t = inpainted_t[0]
+                
+                # Post-process
+                inpainted_np = inpainted_t[0].permute(1, 2, 0).cpu().numpy()
+                inpainted_np = np.clip(inpainted_np * 255, 0, 255).astype(np.uint8)
+                
+                # Unpad (Remove the extra padding we added for mod 8)
+                real_h, real_w = crop_img.shape[:2]
+                final_crop = inpainted_np[:real_h, :real_w]
+                
+                # Paste back
+                # Update result_img
+                result_img[by1:by2, bx1:bx2] = final_crop
+                
+            except Exception as e:
+                print(f"[INPAINT ERROR] Failed on bubble {i}: {e}")
+                
+        # 3. Final Save
         result_bgr = cv2.cvtColor(result_img, cv2.COLOR_RGB2BGR)
         cv2.imwrite(output_path, result_bgr)
+        print(f"[INPAINTING] Smart Tiling Complete. Saved to {output_path}")
         return output_path
