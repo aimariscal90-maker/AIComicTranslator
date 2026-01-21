@@ -3,7 +3,7 @@
 import { useState } from "react";
 import SmartDropzone from "@/app/components/upload/SmartDropzone";
 import DualPanelView from "@/app/components/translate/DualPanelView";
-import { ArrowLeft, Download, Wand2, Loader2, RefreshCw } from "lucide-react";
+import { ArrowLeft, Download, Wand2, Loader2, RefreshCw, Clock } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import api from "@/services/api";
@@ -103,25 +103,25 @@ export default function TranslatorToolPage() {
                     <div className="w-full max-w-xl p-8 animate-in zoom-in-95 duration-500 flex flex-col items-center">
                         <SmartDropzone onFileSelect={handleFileSelect} />
 
-                        {/* Premium Toggle */}
-                        <div className="mt-8 flex items-center gap-4 bg-slate-800/50 p-4 rounded-xl border border-slate-700 w-full hover:bg-slate-800/80 transition-colors">
-                            <div className={`p-3 rounded-full ${isPremium ? 'bg-amber-500/20 text-amber-500' : 'bg-slate-700 text-slate-400'} transition-colors`}>
+                        {/* Premium Toggle (Coming Soon) */}
+                        <div className="mt-8 flex items-center gap-4 bg-slate-800/30 p-4 rounded-xl border border-dashed border-slate-700 w-full hover:bg-slate-800/50 transition-colors opacity-70 cursor-not-allowed">
+                            <div className="p-3 rounded-full bg-slate-700 text-slate-500 transition-colors">
                                 <Wand2 className="w-6 h-6" />
                             </div>
                             <div className="flex-1">
-                                <h4 className="text-white font-bold flex items-center gap-2">
+                                <h4 className="text-slate-400 font-bold flex items-center gap-2">
                                     Premium Style Cloning Mode
-                                    {isPremium && <span className="ml-2 text-[10px] uppercase bg-amber-500 text-slate-900 px-2 py-0.5 rounded-full font-bold">Active</span>}
+                                    <span className="ml-2 text-[10px] uppercase bg-slate-600 text-slate-300 px-2 py-0.5 rounded-full font-bold">Coming Soon</span>
                                 </h4>
-                                <p className="text-slate-400 text-sm">
-                                    Replicates original fonts, colors, and styles. (Slower)
+                                <p className="text-slate-500 text-sm">
+                                    Replicates original fonts, colors, and styles. (Under Construction)
                                 </p>
                             </div>
+                            {/* Disabled Toggle */}
                             <div
-                                onClick={() => setIsPremium(!isPremium)}
-                                className={`w-14 h-8 rounded-full p-1 transition-colors duration-300 relative cursor-pointer ${isPremium ? 'bg-amber-500' : 'bg-slate-700'}`}
+                                className="w-14 h-8 rounded-full p-1 bg-slate-800 border border-slate-700 relative opacity-50"
                             >
-                                <div className={`w-6 h-6 bg-white rounded-full shadow-lg transition-transform duration-300 ${isPremium ? 'translate-x-6' : 'translate-x-0'}`} />
+                                <div className="w-6 h-6 bg-slate-600 rounded-full shadow-inner" />
                             </div>
                         </div>
 
@@ -136,21 +136,43 @@ export default function TranslatorToolPage() {
                     // Processing / Result State
                     <div className="relative w-full h-full flex flex-col">
 
-                        {/* Progress Indicator (Floating) */}
-                        {isProcessing && (
-                            <div className="absolute top-6 left-1/2 -translate-x-1/2 z-30 bg-slate-950/90 backdrop-blur-md border border-indigo-500/30 px-6 py-3 rounded-full flex items-center gap-4 shadow-2xl">
-                                <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />
-                                <div className="flex flex-col">
-                                    <span className="text-white font-bold text-sm">{job?.step || "Processing..."}</span>
-                                    <div className="h-1 w-32 bg-slate-800 rounded-full mt-1 overflow-hidden">
-                                        <div
-                                            className="h-full bg-indigo-500 transition-all duration-300 ease-out"
-                                            style={{ width: `${job?.progress || 0}%` }}
-                                        />
+                        {/* Progress and Timings */}
+                        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2 w-full max-w-md pointer-events-none">
+                            {/* Processing Indicator */}
+                            {isProcessing && (
+                                <div className="bg-slate-950/90 backdrop-blur-md border border-indigo-500/30 px-6 py-3 rounded-full flex items-center gap-4 shadow-2xl pointer-events-auto">
+                                    <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />
+                                    <div className="flex flex-col">
+                                        <span className="text-white font-bold text-sm">{job?.step || "Processing..."}</span>
+                                        <div className="h-1 w-32 bg-slate-800 rounded-full mt-1 overflow-hidden">
+                                            <div
+                                                className="h-full bg-indigo-500 transition-all duration-300 ease-out"
+                                                style={{ width: `${job?.progress || 0}%` }}
+                                            />
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        )}
+                            )}
+
+                            {/* Timings Display (Completion) */}
+                            {!isProcessing && job?.result?.timings && (
+                                <div className="animate-in fade-in zoom-in slide-in-from-bottom-2 duration-500 bg-slate-900/90 backdrop-blur border border-green-500/30 px-6 py-4 rounded-xl shadow-2xl flex flex-col gap-2 pointer-events-auto min-w-[300px]">
+                                    <h4 className="text-green-400 font-bold text-sm flex items-center gap-2 mb-1">
+                                        <Clock className="w-4 h-4" /> Performance Metrics
+                                        <span className="ml-auto text-white">{job.result.timings.total_time}s</span>
+                                    </h4>
+                                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-400">
+                                        <div className="flex justify-between"><span>OCR & Detect:</span> <span className="text-slate-200">{job.result.timings.ocr_processing}s</span></div>
+                                        <div className="flex justify-between"><span>Translation:</span> <span className="text-slate-200">{job.result.timings.translation}s</span></div>
+                                        <div className="flex justify-between"><span>Style & Prep:</span> <span className="text-slate-200">{job.result.timings.analysis_rendering_prep}s</span></div>
+                                        <div className="flex justify-between"><span>Inpainting:</span> <span className="text-slate-200">{job.result.timings.inpainting}s</span></div>
+                                        <div className="flex justify-between col-span-2 border-t border-slate-700 pt-1 mt-1">
+                                            <span>Rendering:</span> <span className="text-slate-200">{job.result.timings.text_rendering}s</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
 
                         {/* Visualizer */}
                         <div className="flex-1 p-4 md:p-8">

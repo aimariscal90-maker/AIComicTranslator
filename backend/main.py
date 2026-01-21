@@ -90,10 +90,11 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
             scale = max_dim / max(h, w)
             new_w = int(w * scale)
             new_h = int(h * scale)
-            print(f"[TASK] Resizing image from {w}x{h} to {new_w}x{new_h}")
-            success = cv2.imwrite(file_path, cv2.resize(img_temp, (new_w, new_h), interpolation=cv2.INTER_AREA))
-            if not success:
-                print(f"[TASK WARNING] Failed to overwrite resized image")
+            # print(f"[TASK] Resizing image from {w}x{h} to {new_w}x{new_h}")
+            # success = cv2.imwrite(file_path, cv2.resize(img_temp, (new_w, new_h), interpolation=cv2.INTER_AREA))
+            # if not success:
+            #    print(f"[TASK WARNING] Failed to overwrite resized image")
+            print(f"[TASK] Skipping resize to match Lab behavior")
 
         # 2. Detector
         job_manager.update_job(job_id, progress=20, step="Detecting Bubbles 🕵️")
@@ -110,152 +111,54 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
 
         # 3. Contextual Processing based on Mode
         if mode == "full" or mode == "premium":
-            # --- FULL & PREMIUM TRANSLATION PIPELINE ---
+            # --- FULL & PREMIUM TRANSLATION PIPELINE (UNIFIED) ---
+            from services.pipeline import execute_lab_pipeline
             
-            # OCR
-            job_manager.update_job(job_id, progress=40, step="Reading Text (OCR) 📖")
+            job_manager.update_job(job_id, progress=40, step="Processing Pipeline (Lab Logic) ⚙️")
+            
+            # Init Services
             ocr_service = OCRService()
-            
-            # Helper: Extract crops and run OCR
-            img_cv = cv2.imread(file_path)
-            
-            # Initialize StyleAnalyzer if Premium
-            if mode == "premium":
-                style_analyzer = StyleAnalyzer()
-                job_manager.update_job(job_id, progress=45, step="Analyzing Art Style 🎨")
-            
-            for bubble in bubbles:
-                x1, y1, x2, y2 = map(int, bubble['bbox'])
-                crop = img_cv[y1:y2, x1:x2]
-                if crop.size > 0:
-                    success, encoded = cv2.imencode('.jpg', crop)
-                    if success:
-                        res = ocr_service.detect_text(encoded.tobytes())
-                        bubble['text'] = res.get('text', '')
-                        bubble['clean_text'] = bubble['text'].replace('\n', ' ')
-                        
-                            # PREMIUM: Style Analysis
-                        if mode == "premium":
-                            try:
-                                # [Day 13] Pass Polygon (Blue Blob) to mask background noise (Pink Wall)
-                                style = style_analyzer.analyze_roi(img_cv, bubble['bbox'], bubble.get('polygon'))
-                                
-                                # Store raw style for Phase 2 (Font Matching)
-                                # We defer matching until we have semantic tone from translation
-                                bubble['style_data'] = style
-                                
-                                # Verification Log (Partial)
-                                print(f"   🎨 [Day 2 Color] Detectado: {style.get('text_color')}")
-                                print(f"   📏 [Day 3 Size]  Estimado:  {style.get('font_size_pt')}pt")
-                                print(f"   ⚖️ [Day 4 Typo]  Bold: {style.get('is_bold')} / Italic: {style.get('is_italic')}")
-
-                                # Inject basic visual props needed for renderer fallback
-                                bubble['text_color'] = style.get('text_color', '#000000')
-                                bubble['bg_color'] = style.get('bg_color', '#FFFFFF') # Fix: Pass BG Color
-                                bubble['estimated_font_size'] = style.get('font_size_px', 20)
-                                bubble['text_angle'] = style.get('rotation_angle', 0)
-                                
-                            except Exception as e:
-                                print(f"Style Analysis failed for bubble: {e}")
-
-            # Translate & Classify (Day 06)
-            job_manager.update_job(job_id, progress=60, step="Translating & Analyzing Tone 🧠")
             translator = TranslatorService(target_lang='es')
-            texts = [b.get('clean_text', '') for b in bubbles if b.get('clean_text')]
-            
-            if texts:
-                # Returns list of dicts: [{'translation': 'Hola', 'type': 'scream'}, ...]
-                results, _ = translator.translate_batch_with_context(texts)
-                
-                t_idx = 0
-                
-                # --- PHASE 2: FONT MATCHING (Visual + Semantic) ---
-                from services.font_matcher import FontMatcher
-                font_matcher = FontMatcher()
-                
-                for b in bubbles:
-                    if b.get('clean_text'):
-                        # 1. Assign Translation
-                        if t_idx < len(results):
-                            res = results[t_idx]
-                            b['translation'] = res.get('translation', '')
-                            b['bubble_type'] = res.get('type', 'speech')
-                            t_idx += 1
-                        else:
-                            b['translation'] = ""
-                            b['bubble_type'] = "speech"
-                            
-                        # 2. Match Font (If Premium)
-                        if mode == "premium" and 'style_data' in b:
-                            # Re-extract crop for SSIM (Visual Matching)
-                            x1, y1, x2, y2 = map(int, b['bbox'])
-                            bubble_crop = img_cv[y1:y2, x1:x2]
-                            
-                            # Now we have all 4 signals: Style, Tone, Visual Image, Text
-                            font_name = font_matcher.match_font(
-                                b['style_data'], 
-                                bubble_type=b['bubble_type'],
-                                roi_image=bubble_crop,
-                                ocr_text=b['clean_text']
-                            )
-                            b['font'] = font_name
-                            b['font_path'] = font_matcher.get_font_path(font_name)
-                            
-                            print(f"   🧠 [Day 7 SSIM] '{b['clean_text'][:10]}...' -> Type: {b['bubble_type'].upper()} -> Font: {font_name}")
-                        else:
-                            # STANDARD MODE: Use default comic font for everything
-                            font_name = "AnimeAce.ttf" 
-                            b['font'] = font_name
-                            b['font_path'] = font_matcher.get_font_path(font_name)
-                            # Basic props for standard render
-                            b['text_color'] = "#000000"
-                            b['bg_color'] = "#FFFFFF" 
-                            b['estimated_font_size'] = 18 # Default size
-                            print(f"   🔹 [Standard] '{b['clean_text'][:10]}...' -> Font: {font_name}")
-                    else:
-                        # Empty bubble
-                        b['font'] = "AnimeAce.ttf" # Default
-                        b['font_path'] = font_matcher.get_font_path("AnimeAce.ttf")
-            
-            # Inpaint
-            job_manager.update_job(job_id, progress=75, step="Cleaning Text 🎨")
+            style_analyzer = StyleAnalyzer()
+            from services.font_matcher import FontMatcher
+            font_matcher = FontMatcher()
             remover = TextRemover()
-            clean_filename = f"clean_text_{unique_filename}"
-            # Use 'text' mask mode for Premium to respect bubbles
-            mask_mode = 'text' if (mode == "premium") else 'bubble'
-            # ACTUALLY: We already forced 'text' masking as default in inpainting.py based on user request ("El borrado selectivo")
-            # So mode doesn't matter much here, but let's be explicit
-            remover.remove_text(file_path, bboxes=bubbles, output_path=os.path.join(UPLOAD_DIR, clean_filename), fast_mode=True)
-            
-            # Render
-            job_manager.update_job(job_id, progress=90, step="Rendering Text ✍️")
             renderer = TextRenderer()
-            final_filename = f"final_{unique_filename}"
-            renderer.render_text(os.path.join(UPLOAD_DIR, clean_filename), bubbles, os.path.join(UPLOAD_DIR, final_filename))
             
-            final_url = f"/uploads/{final_filename}"
-            clean_url = f"/uploads/{clean_filename}"
-
+            try:
+                pipeline_res = execute_lab_pipeline(
+                    file_path, bubbles, ocr_service, translator, 
+                    style_analyzer, font_matcher, remover, renderer, 
+                    UPLOAD_DIR, unique_filename, log_func=print
+                )
+                
+                final_url = f"/uploads/{os.path.basename(pipeline_res['final_path'])}"
+                clean_url = f"/uploads/{os.path.basename(pipeline_res['clean_path'])}"
+                bubbles = pipeline_res['bubbles']
+                # Extract timings if available
+                timings_data = pipeline_res.get('timings', {})
+                
+            except Exception as pe:
+                 print(f"Pipeline Failed: {pe}")
+                 raise pe
+                 
         elif mode == "clean_only":
             # --- CLEANER ONLY PIPELINE ---
             job_manager.update_job(job_id, progress=50, step="Removing Bubbles (Magic Eraser)...")
             remover = TextRemover()
             clean_filename = f"clean_text_{unique_filename}"
-            # In clean_only, we might want 'mask_mode="bubbles"' to clear the whole bubble or 'text' to keep bubble shape?
-            # User said "borrar los bocadillos y textos". Let's assume standard text removal for now.
-            # Usually strict clean removes the text. If they want to remove the *bubble shape* that's 'inpainting whole bbox'.
-            # TextRemover `mask_mode` defaults to 'text' (text mask).
-            # If we want to remove the bubble, we should pass mask_mode='bbox' or similar if supported.
-            # Assuming 'text' is safer for now to preserve art behind text.
+            # Standard inpainting for cleaning
             remover.remove_text(file_path, bboxes=bubbles, output_path=os.path.join(UPLOAD_DIR, clean_filename), fast_mode=True)
             
-            final_url = f"/uploads/{clean_filename}" # Final result IS the clean image
+            final_url = f"/uploads/{clean_filename}" 
             clean_url = f"/uploads/{clean_filename}"
             
             # Clear text data for safety
             for b in bubbles:
                 b['text'] = ""
                 b['translation'] = ""
+            
+            timings_data = {}
 
         # Save Metadata
         json_path = os.path.join(UPLOAD_DIR, f"metadata_{unique_filename}.json")
@@ -288,7 +191,8 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
             "original_url": f"/uploads/{unique_filename}",
             "final_url": final_url,
             "clean_url": clean_url,
-            "bubbles_data": bubbles
+            "bubbles_data": bubbles,
+            "timings": timings_data if 'timings_data' in locals() else {}
         }
         job_manager.update_job(job_id, status="completed", progress=100, result=result)
 
