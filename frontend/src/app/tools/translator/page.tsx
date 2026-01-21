@@ -17,6 +17,8 @@ export default function TranslatorToolPage() {
     const [isProcessing, setIsProcessing] = useState(false);
     const [isPremium, setIsPremium] = useState(false); // New state for Premium Mode
 
+    const [showMetrics, setShowMetrics] = useState(false);
+
     // Polling logic
     const { startPolling, job, stopPolling } = usePolling({
         onComplete: (completedJob) => {
@@ -24,6 +26,7 @@ export default function TranslatorToolPage() {
             if (completedJob.result?.final_url) {
                 setResultUrl(getFullUrl(completedJob.result.final_url));
             }
+            setShowMetrics(true); // Show metrics on completion
             toast.success("Translation Complete!");
         },
         onFail: (err) => {
@@ -63,11 +66,12 @@ export default function TranslatorToolPage() {
         setFile(null);
         setOriginalUrl(null);
         setResultUrl(null);
+        setShowMetrics(false);
         stopPolling();
     };
 
     return (
-        <div className="flex flex-col h-[calc(100vh-6rem)] gap-6">
+        <div className="flex flex-col h-[calc(100vh-6rem)] gap-6" onClick={() => { if (showMetrics) setShowMetrics(false); }}>
 
             {/* Header */}
             <div className="flex justify-between items-center">
@@ -103,27 +107,7 @@ export default function TranslatorToolPage() {
                     <div className="w-full max-w-xl p-8 animate-in zoom-in-95 duration-500 flex flex-col items-center">
                         <SmartDropzone onFileSelect={handleFileSelect} />
 
-                        {/* Premium Toggle (Coming Soon) */}
-                        <div className="mt-8 flex items-center gap-4 bg-slate-800/30 p-4 rounded-xl border border-dashed border-slate-700 w-full hover:bg-slate-800/50 transition-colors opacity-70 cursor-not-allowed">
-                            <div className="p-3 rounded-full bg-slate-700 text-slate-500 transition-colors">
-                                <Wand2 className="w-6 h-6" />
-                            </div>
-                            <div className="flex-1">
-                                <h4 className="text-slate-400 font-bold flex items-center gap-2">
-                                    Premium Style Cloning Mode
-                                    <span className="ml-2 text-[10px] uppercase bg-slate-600 text-slate-300 px-2 py-0.5 rounded-full font-bold">Coming Soon</span>
-                                </h4>
-                                <p className="text-slate-500 text-sm">
-                                    Replicates original fonts, colors, and styles. (Under Construction)
-                                </p>
-                            </div>
-                            {/* Disabled Toggle */}
-                            <div
-                                className="w-14 h-8 rounded-full p-1 bg-slate-800 border border-slate-700 relative opacity-50"
-                            >
-                                <div className="w-6 h-6 bg-slate-600 rounded-full shadow-inner" />
-                            </div>
-                        </div>
+
 
                         <div className="text-center mt-6 space-y-2">
                             <h3 className="text-white font-bold text-lg">AI-Powered Comic Translation</h3>
@@ -137,37 +121,72 @@ export default function TranslatorToolPage() {
                     <div className="relative w-full h-full flex flex-col">
 
                         {/* Progress and Timings */}
-                        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2 w-full max-w-md pointer-events-none">
-                            {/* Processing Indicator */}
+                        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-4 w-full max-w-sm pointer-events-none">
+
+                            {/* --- PREMIUM LOADER --- */}
                             {isProcessing && (
-                                <div className="bg-slate-950/90 backdrop-blur-md border border-indigo-500/30 px-6 py-3 rounded-full flex items-center gap-4 shadow-2xl pointer-events-auto">
-                                    <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />
-                                    <div className="flex flex-col">
-                                        <span className="text-white font-bold text-sm">{job?.step || "Processing..."}</span>
-                                        <div className="h-1 w-32 bg-slate-800 rounded-full mt-1 overflow-hidden">
-                                            <div
-                                                className="h-full bg-indigo-500 transition-all duration-300 ease-out"
-                                                style={{ width: `${job?.progress || 0}%` }}
-                                            />
+                                <div className="bg-slate-900/95 backdrop-blur-xl border border-indigo-500/20 px-6 py-5 rounded-2xl flex flex-col gap-3 shadow-2xl pointer-events-auto w-full animate-in zoom-in-95 duration-300">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className="relative">
+                                                <div className="absolute inset-0 bg-indigo-500 blur-md opacity-20 animate-pulse"></div>
+                                                <Loader2 className="w-5 h-5 text-indigo-400 animate-spin relative z-10" />
+                                            </div>
+                                            <span className="text-slate-200 font-medium text-sm">
+                                                {/* Map technical steps to friendly names */}
+                                                {job?.step?.includes("Extracting") ? "Analyzing Page..." :
+                                                    job?.step?.includes("OCR") ? "Reading Text..." :
+                                                        job?.step?.includes("Translation") ? "Translating Story..." :
+                                                            job?.step?.includes("Removing") ? "Cleaning Artwork..." :
+                                                                job?.step?.includes("Rendering") ? "Typesetting..." :
+                                                                    job?.step || "Working Magic..."}
+                                            </span>
                                         </div>
+                                        <span className="text-xs font-bold text-indigo-400">{Math.round(job?.progress || 0)}%</span>
+                                    </div>
+
+                                    {/* Progress Bar */}
+                                    <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                                        <div
+                                            className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-500 ease-out shadow-[0_0_10px_rgba(99,102,241,0.5)]"
+                                            style={{ width: `${job?.progress || 0}%` }}
+                                        />
                                     </div>
                                 </div>
                             )}
 
-                            {/* Timings Display (Completion) */}
-                            {!isProcessing && job?.result?.timings && (
-                                <div className="animate-in fade-in zoom-in slide-in-from-bottom-2 duration-500 bg-slate-900/90 backdrop-blur border border-green-500/30 px-6 py-4 rounded-xl shadow-2xl flex flex-col gap-2 pointer-events-auto min-w-[300px]">
-                                    <h4 className="text-green-400 font-bold text-sm flex items-center gap-2 mb-1">
-                                        <Clock className="w-4 h-4" /> Performance Metrics
-                                        <span className="ml-auto text-white">{job.result.timings.total_time}s</span>
-                                    </h4>
-                                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-400">
-                                        <div className="flex justify-between"><span>OCR & Detect:</span> <span className="text-slate-200">{job.result.timings.ocr_processing}s</span></div>
-                                        <div className="flex justify-between"><span>Translation:</span> <span className="text-slate-200">{job.result.timings.translation}s</span></div>
-                                        <div className="flex justify-between"><span>Style & Prep:</span> <span className="text-slate-200">{job.result.timings.analysis_rendering_prep}s</span></div>
-                                        <div className="flex justify-between"><span>Inpainting:</span> <span className="text-slate-200">{job.result.timings.inpainting}s</span></div>
-                                        <div className="flex justify-between col-span-2 border-t border-slate-700 pt-1 mt-1">
-                                            <span>Rendering:</span> <span className="text-slate-200">{job.result.timings.text_rendering}s</span>
+                            {/* --- RESULT SUMMARY (Friendly) --- */}
+                            {!isProcessing && job?.result?.timings && showMetrics && (
+                                <div className="animate-in fade-in slide-in-from-top-4 duration-700 bg-slate-900/80 backdrop-blur-md border border-slate-700/50 p-1 rounded-2xl shadow-2xl flex flex-col gap-0 pointer-events-auto min-w-[280px] cursor-pointer" onClick={(e) => { e.stopPropagation(); setShowMetrics(false); }}>
+
+                                    {/* Header Badge */}
+                                    <div className="flex items-center gap-3 px-4 py-3 bg-slate-800/50 rounded-xl">
+                                        <div className="p-2 bg-green-500/10 rounded-full text-green-400">
+                                            <Clock className="w-4 h-4" />
+                                        </div>
+                                        <div className="flex-1">
+                                            <h4 className="text-white font-medium text-sm">Translation Complete</h4>
+                                            <p className="text-slate-500 text-xs">Ready for download</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <span className="block text-lg font-bold text-white tracking-tight">{job.result.timings.total_time}s</span>
+                                            <span className="text-[10px] uppercase text-slate-500 font-bold tracking-wider">Total Time</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Simple Breakdown (Horizontal) */}
+                                    <div className="grid grid-cols-3 divide-x divide-slate-700/50 p-2 text-center mt-1">
+                                        <div className="px-2 py-1">
+                                            <span className="block text-[10px] text-slate-500 uppercase font-bold text-xs">Read</span>
+                                            <span className="text-xs text-slate-300 font-medium">{job.result.timings.ocr_processing}s</span>
+                                        </div>
+                                        <div className="px-2 py-1">
+                                            <span className="block text-[10px] text-slate-500 uppercase font-bold text-xs">Clean</span>
+                                            <span className="text-xs text-slate-300 font-medium">{job.result.timings.inpainting}s</span>
+                                        </div>
+                                        <div className="px-2 py-1">
+                                            <span className="block text-[10px] text-slate-500 uppercase font-bold text-xs">Typeset</span>
+                                            <span className="text-xs text-slate-300 font-medium">{job.result.timings.text_rendering}s</span>
                                         </div>
                                     </div>
                                 </div>

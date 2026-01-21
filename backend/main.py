@@ -114,7 +114,7 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
             # --- FULL & PREMIUM TRANSLATION PIPELINE (UNIFIED) ---
             from services.pipeline import execute_lab_pipeline
             
-            job_manager.update_job(job_id, progress=40, step="Processing Pipeline (Lab Logic) ⚙️")
+            job_manager.update_job(job_id, progress=40, step="Processing Translation...")
             
             # Init Services
             ocr_service = OCRService()

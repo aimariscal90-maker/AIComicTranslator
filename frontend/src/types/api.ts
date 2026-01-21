@@ -27,6 +27,14 @@ export interface ProcessingResult {
     clean_bubble_url?: string;
     bubbles_count: number;
     bubbles_data: Bubble[];
+    timings?: {
+        total_time: number;
+        ocr_processing: number;
+        translation: number;
+        analysis_rendering_prep: number;
+        inpainting: number;
+        text_rendering: number;
+    };
 }
 
 export interface Job {

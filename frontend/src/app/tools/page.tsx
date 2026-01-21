@@ -18,11 +18,11 @@ const tools = [
     {
         id: "premium-translator",
         title: "Premium Style Translator",
-        description: "Intelligent translation that clones the original font style, color, and weight.",
+        description: "The ultimate localized experience using our most powerful experimental models for studio-grade results.",
         icon: Crown,
         color: "bg-amber-500",
         href: "/tools/translator", // Changed to point to the main translator page where we added the toggle
-        status: "Beta"
+        status: "Coming Soon"
     },
     {
         id: "translator",
@@ -120,9 +120,9 @@ export default function ToolsPage() {
 
                                     <div className="flex items-center justify-between mt-auto">
                                         <span className={`text-xs font-bold px-3 py-1 rounded-full ${tool.status === 'Ready' ? 'bg-emerald-500/10 text-emerald-400' :
-                                                tool.status === 'New' ? 'bg-indigo-500/10 text-indigo-400' :
-                                                    tool.status === 'Beta' ? 'bg-amber-500/10 text-amber-400' :
-                                                        'bg-slate-700/50 text-slate-500'
+                                            tool.status === 'New' ? 'bg-indigo-500/10 text-indigo-400' :
+                                                tool.status === 'Beta' ? 'bg-amber-500/10 text-amber-400' :
+                                                    'bg-slate-700/50 text-slate-500'
                                             }`}>
                                             {tool.status}
                                         </span>
