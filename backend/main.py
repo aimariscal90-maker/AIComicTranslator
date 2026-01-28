@@ -58,12 +58,16 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 # --- CORE LOGIC ---
 
-def process_comic_task(job_id: str, file_path: str, unique_filename: str, project_id: str = None, page_number: int = None, mode: str = "full"):
+def process_comic_task(job_id: str, file_path: str, unique_filename: str, project_id: str = None, page_number: int = None, mode: str = "full", cleaning_strategy: str = "clean_text"):
     """
     Main pipeline task.
     Modes:
     - 'full': Detect -> OCR -> Translate -> Inpaint -> Render
     - 'clean_only': Detect -> Inpaint (Skip OCR/Translate/Render)
+    
+    Strategies:
+    - 'clean_text': Removes text inside bubbles (Fill)
+    - 'remove_bubble': Removes the entire bubble (LaMa)
     """
     try:
         job_manager.update_job(job_id, status="processing", progress=10, step="Initializing AI Models...")
@@ -144,11 +148,22 @@ def process_comic_task(job_id: str, file_path: str, unique_filename: str, projec
                  
         elif mode == "clean_only":
             # --- CLEANER ONLY PIPELINE ---
-            job_manager.update_job(job_id, progress=50, step="Removing Bubbles (Magic Eraser)...")
+            # Determine Inpainting Strategy
+            mask_mode = 'text' # Default: Clean text only (safe)
+            inpaint_algo = 'fill'
+            
+            if cleaning_strategy == 'remove_bubble':
+                 job_manager.update_job(job_id, progress=50, step="Removing Bubbles (Magic Eraser)...")
+                 mask_mode = 'bubble'
+                 inpaint_algo = 'lama'
+            else:
+                 job_manager.update_job(job_id, progress=50, step="Cleaning Text (Smart Fill)...")
+            
+            # Fix: Init remover and define filename
             remover = TextRemover()
-            clean_filename = f"clean_text_{unique_filename}"
-            # Standard inpainting for cleaning
-            remover.remove_text(file_path, bboxes=bubbles, output_path=os.path.join(UPLOAD_DIR, clean_filename), fast_mode=True)
+            clean_filename = f"clean_{unique_filename}"
+            
+            remover.remove_text(file_path, bboxes=bubbles, output_path=os.path.join(UPLOAD_DIR, clean_filename), inpaint_mode=inpaint_algo, mask_mode=mask_mode)
             
             final_url = f"/uploads/{clean_filename}" 
             clean_url = f"/uploads/{clean_filename}"
@@ -284,7 +299,8 @@ async def process_comic(
     background_tasks: BackgroundTasks, 
     file: UploadFile = File(...), 
     project_id: Optional[str] = Form(None),
-    mode: str = Form("full")
+    mode: str = Form("full"),
+    cleaning_strategy: str = Form("clean_text")
 ):
     if not file.content_type.startswith("image/"):
         raise HTTPException(400, "Invalid file type")
@@ -297,7 +313,7 @@ async def process_comic(
         shutil.copyfileobj(file.file, f)
         
     job_id = job_manager.create_job()
-    background_tasks.add_task(process_comic_task, job_id, path, unique_name, project_id, None, mode)
+    background_tasks.add_task(process_comic_task, job_id, path, unique_name, project_id, None, mode, cleaning_strategy)
     return {"job_id": job_id, "status": "queued"}
 
 @app.get("/jobs/{job_id}")

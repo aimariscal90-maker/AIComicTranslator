@@ -30,13 +30,18 @@ class TextRemover:
             print(f"Error loading LaMa model: {e}")
             self.model = None
 
-    def remove_text(self, image_path, bboxes, output_path, mask_mode='bubble', fast_mode=False):
+    def remove_text(self, image_path, bboxes, output_path, mask_mode='bubble', inpaint_mode='lama', fast_mode=False):
         """
         Borra el texto de la imagen.
         mask_mode='bubble': Borra todo el poligono del globo.
         mask_mode='text': Borra solo las cajas de palabras (word_boxes) dentro del globo.
+        inpaint_mode='lama' | 'telea' | 'fill'
         """
-        if self.model is None:
+        # Backward compatibility for fast_mode
+        if fast_mode: 
+            inpaint_mode = 'telea'
+
+        if inpaint_mode == 'lama' and self.model is None:
             print("Model not loaded, skipping inpainting.")
             return
             
@@ -50,95 +55,155 @@ class TextRemover:
         for bubble in bboxes:
             if mask_mode == 'text' and 'word_boxes' in bubble and bubble['word_boxes']:
                 # Modo Fino: Usar coordenadas de palabras
-                # OJO: Las word_boxes son relativas al crop (recorte) o absolutas?
-                # Revisar ocr.py. Vision devuelve absolutas si se le pasa la imagen entera,
-                # pero en main.py le pasamos el crop.
-                # IMPORTANTE: En main.py necesitamos ajustar coordenadas si son relativas al crop.
-                # ASUMIREMOS aqui que 'word_boxes' vienen ya en coordenadas de la imagen original.
                 for wb in bubble['word_boxes']:
                     pts = np.array(wb, np.int32)
                     cv2.fillPoly(mask, [pts], 1.0)
             else:
                 # --- ESTRATEGIA: SOLO TEXTO (Adaptive) ---
-                # Objetivo: Crear mascara SOLO de las letras.
-                # 1. Analizar si el globo es claro (letras negras) u oscuro (letras blancas).
                 x1, y1, x2, y2 = map(int, bubble['bbox'])
-                    
-                # Clamp
                 x1, y1 = max(0, x1), max(0, y1)
                 x2, y2 = min(w, x2), min(h, y2)
                 
                 if x2 > x1 and y2 > y1:
                     roi = img[y1:y2, x1:x2]
                     gray_roi = cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
-                    
-                    # Determinar brillo medio
                     mean_brightness = np.mean(gray_roi)
-                    
                     text_mask_roi = None
                     
                     if mean_brightness > 100:
-                        # TIPO 1: Globo Claro (Fondo Blanco/Gris, Texto Oscuro)
-                        # Buscamos pixeles oscuros (< umbral)
-                        # Adaptive Threshold es mejor para iluminacion variable
                         text_mask_roi = cv2.adaptiveThreshold(
                             gray_roi, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
                             cv2.THRESH_BINARY_INV, 21, 10
                         )
                     else:
-                        # TIPO 2: Globo Oscuro (Fondo Negro, Texto Blanco)
-                        # Buscamos pixeles claros (> umbral)
-                        # Invertimos la imagen para que el texto blanco sea negro, luego threshold inv
-                        # O simplemente threshold normal: Texto blanco (255) -> Mascara (255)
                         _, text_mask_roi = cv2.threshold(gray_roi, 150, 255, cv2.THRESH_BINARY)
                         
-                    # Limpieza Morfologica:
-                    # 1. Eliminar ruido diminuto (puntos) con OPEN
-                    # 2. Conectar letras rotas con DILATE
                     kernel_clean = cv2.getStructuringElement(cv2.MORPH_RECT, (2,2))
-                    # Eliminar ruido
                     text_mask_roi = cv2.morphologyEx(text_mask_roi, cv2.MORPH_OPEN, kernel_clean)
-                    
-                    # Asignar al mask global
                     mask[y1:y2, x1:x2] = text_mask_roi.astype(np.float32) / 255.0
                     
-                    # IMPORTANTE: Si por alguna razon la mascara esta vacia (no detecto texto),
-                    # hacemos fallback a borrar un rectangulo pequeño en el centro? 
-                    # No, mejor no borrar nada que borrarlo todo.
                     if np.sum(text_mask_roi) < 10:
                             print(f"[INPAINT WARNING] No text detected in bubble {x1},{y1}. Skipping mask.")
                 
         # Dilatar mascara
-        # Para texto fino, dilatar menos. Para globo entero, dilatar un poco mas.
-        if mask_mode == 'text' or True: # Force precision mode always as requested
+        if mask_mode == 'text' or True: 
              MASK_PADDING = 3 
-             iter_dil = 2 # Un poco mas para asegurar que cubre bordes de compresion JPG
+             iter_dil = 2 
         else:
              MASK_PADDING = 5
              iter_dil = 1
              
         kernel = np.ones((MASK_PADDING, MASK_PADDING), np.uint8) 
-        mask = cv2.dilate(mask, kernel, iterations=iter_dil)
+        dilated_mask = cv2.dilate(mask, kernel, iterations=iter_dil)
+
+        # --- SAFE CONSTRAINT (Protect Borders) ---
+        # Create a mask of the "Allowed Area" (Inside Bubbles)
+        # and intersect with the dilated mask to prevent bleeding onto borders.
         
-        # --- OPTIMIZATION 3: FAST MODE (OpenCV Telea) ---
-        if fast_mode:
-            print("[INPAINTING] Fast Mode enabled (OpenCV Telea)")
-            try:
-                # cv2.inpaint requires uint8 mask
-                mask_8u = (mask * 255).astype(np.uint8)
-                # Radius 3 is a good balance
-                inpainted = cv2.inpaint(img, mask_8u, 3, cv2.INPAINT_TELEA)
+        constraint_mask = np.zeros((h, w), dtype=np.uint8)
+        
+        for bubble in bboxes:
+            # Prefer Polygon if available
+            if 'polygon' in bubble and len(bubble['polygon']) > 3:
+                pts = np.array(bubble['polygon'], np.int32)
+                cv2.fillPoly(constraint_mask, [pts], 255)
+            else:
+                # Fallback to bbox
+                x1, y1, x2, y2 = map(int, bubble['bbox'])
+                # Erode bbox slightly to be safe
+                cv2.rectangle(constraint_mask, (x1+2, y1+2), (x2-2, y2-2), 255, -1)
+        
+        # Erode Constraint Mask (IMPORTANT)
+        # We shrink the allowed area by ~2px to ensure we don't touch the black border
+        kernel_safe = np.ones((5,5), np.uint8) 
+        constraint_mask = cv2.erode(constraint_mask, kernel_safe, iterations=1)
+        
+        # Apply Intersection
+        # logical_and requires binary, but we are working with float mask 0..1
+        
+        constraint_float = constraint_mask.astype(np.float32) / 255.0
+        # Intersect: Only allow mask where constraint is 1.0
+        final_mask = cv2.bitwise_and(dilated_mask, dilated_mask, mask=constraint_mask)
+        
+        # Update main mask
+        mask = final_mask
+        
+        # --- MODE 1: SOLID COLOR FILL (Smart Flood Fill) ---
+        if inpaint_mode == 'fill':
+            print("[INPAINTING] Mode: Solid Color Fill (Smart Flood)")
+            result_img = img.copy()
+            
+            # Apply fill for each bubble
+            for i, bubble in enumerate(bboxes):
+                x1, y1, x2, y2 = map(int, bubble['bbox'])
+                x1, y1 = max(0, x1), max(0, y1)
+                x2, y2 = min(w, x2), min(h, y2)
                 
+                if x2 <= x1 or y2 <= y1: continue
+                
+                # Get ROI
+                roi = result_img[y1:y2, x1:x2]
+                
+                # 1. Create Layout Mask (Full Bubble) from Polygon
+                layout_mask = np.zeros((y2-y1, x2-x1), dtype=np.uint8)
+                
+                if 'polygon' in bubble and len(bubble['polygon']) > 3:
+                     # Translate polygon to ROI coordinates
+                     poly_pts = np.array(bubble['polygon'], np.int32)
+                     poly_pts = poly_pts - np.array([x1, y1])
+                     cv2.fillPoly(layout_mask, [poly_pts], 255)
+                else:
+                     cv2.rectangle(layout_mask, (0,0), (x2-x1, y2-y1), 255, -1)
+                
+                # 2. Determine Fill Color (Median of Layout Mask)
+                fill_color = (255, 255, 255) 
+                coords = np.where(layout_mask == 255)
+                if len(coords[0]) > 0:
+                    try:
+                        bg_pixels = roi[coords[0], coords[1]]
+                        median_bg = np.median(bg_pixels, axis=0).astype(int)
+                        fill_color = tuple(map(int, median_bg))
+                    except: pass
+                    
+                # 3. Create Smart Mask (Geometric Erosion Only)
+                # We simply erode the layout mask to be safe from borders.
+                # No thresholding based on brightness, because that protects the text too!
+                
+                kernel_erode = np.ones((5,5), np.uint8)
+                erosion_iter = 1
+                
+                # Dynamic erosion based on bubble size? 
+                # If bubble is tiny, 5px might kill it.
+                if (x2-x1) < 50 or (y2-y1) < 50:
+                    kernel_erode = np.ones((3,3), np.uint8)
+                
+                final_fill_mask = cv2.erode(layout_mask, kernel_erode, iterations=erosion_iter)
+                
+                # 4. Apply Fill
+                color_layer = np.full_like(roi, fill_color)
+                mask_bool = final_fill_mask > 0
+                roi[mask_bool] = color_layer[mask_bool]
+                
+                result_img[y1:y2, x1:x2] = roi
+
+            result_bgr = cv2.cvtColor(result_img, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(output_path, result_bgr)
+            return output_path
+
+        # --- MODE 2: FAST (OpenCV Telea) ---
+        if inpaint_mode == 'telea':
+            print("[INPAINTING] Mode: OpenCV Telea")
+            try:
+                mask_8u = (mask * 255).astype(np.uint8)
+                inpainted = cv2.inpaint(img, mask_8u, 3, cv2.INPAINT_TELEA)
                 result_bgr = cv2.cvtColor(inpainted, cv2.COLOR_RGB2BGR)
                 cv2.imwrite(output_path, result_bgr)
                 return output_path
             except Exception as e:
                 print(f"[INPAINTING] Fast mode failed: {e}. Falling back to LaMa.")
-        # ------------------------------------------------
         
-        # 2. SMART TILING INFERENCE (Optimization)
-        # Instead of processing the full high-res page, we iterate over bubbles,
-        # crop them with context, and run LaMa on the small patches.
+        # --- MODE 3: LAMA (Smart Tiling) ---
+        # Default fallback
         
         result_img = img.copy() # Work on a copy
         

@@ -152,8 +152,8 @@ export default function Dashboard() {
             <p className="text-slate-400 mb-6">
               Precision tools for manual cleanup and inpainting verification. Access via Projects.
             </p>
-            <Link href="/projects" className="text-emerald-400 font-bold hover:text-emerald-300 flex items-center gap-2 group-hover:gap-3 transition-all">
-              Go to Projects <ArrowRight className="w-4 h-4" />
+            <Link href="/tools/text-remover" className="text-emerald-400 font-bold hover:text-emerald-300 flex items-center gap-2 group-hover:gap-3 transition-all">
+              Open Eraser <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
         </motion.div>
